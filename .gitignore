@@ -1,0 +1,105 @@
+# ==============================================================================
+# AAISE Root .gitignore — Python FastAPI + Next.js + Docker + SQL Server
+# ==============================================================================
+
+# 1. Environment & Local Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+
+# 2. Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 3. Python Testing, Linting & Type Checking
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+coverage.xml
+nosetests.xml
+
+# 4. Node.js & Next.js Frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.next/
+out/
+.turbo/
+.vercel/
+
+# 5. Playwright & Browser Automation Artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# 6. Database & Local Storage
+*.mdf
+*.ldf
+*.ndf
+*.bak
+*.sqlite
+*.sqlite3
+*.db
+
+# 7. Local Logs & OS/IDE Machine Configurations
+*.log
+logs/
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 8. Antigravity & Agent Scratch / Runtime Artifacts
+.gemini/
+.system_generated/
+scratch/
+tmp/
+temp/
+
+# 9. MCP Secrets & Local Credentials
+mcp_secrets.env
+mcp_config.local.json
