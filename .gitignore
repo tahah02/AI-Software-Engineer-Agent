@@ -77,6 +77,8 @@ playwright/.cache/
 *.sqlite
 *.sqlite3
 *.db
+data/
+
 
 # 7. Local Logs & OS/IDE Machine Configurations
 *.log

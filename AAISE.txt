@@ -1,0 +1,23 @@
+Cut the Cost
+Prompt Caching, Model Routing
+
+Measure It
+Evals, LLM as judge
+
+Guardrails
+Input/Output checks
+
+Tool+Agents
+Tool Calling
+Agent Loop
+
+
+
+
+
+Agent	Recommended model	Provider
+Agent 1: Doc Reviewer	Gemini 3.8 Flash*	Google AI Studio
+Agent 2: Mock API Developer	GPT-OSS 120B	Groq
+Agent 3: Main Coding Agent	Qwen Coder free variant*	OpenRouter
+Agent 4: QA Engineer	Qwen 3.8 27B	Groq
+Agent 5: Security Reviewer	Gemini 3.5 Flash-Lite*	Google AI Studio

@@ -1,84 +1,82 @@
-# Autonomous Multi-Agent Workflow — AAISE
+# Dynamic Multi-Agent Workflow — AAISE
 
 ## 1. Overview
-The AAISE workflow is orchestrated via **LangGraph**, providing a deterministic state machine, checkpointed execution, parallel branch coordination, human-in-the-loop approval interrupts, and bounded defect retry loops.
+The AAISE workflow is orchestrated via **LangGraph**, providing a dynamic state machine with conditional routing, durable persistence checkpointing, parallel execution, human-in-the-loop approval interrupts, and configurable agent activation per project.
 
 ---
 
-## 2. End-to-End Workflow Diagram
+## 2. Dynamic Workflow Execution Graph
 
 ```
-[Start: Project Created]
-         |
-         v
-[Node 1: Ingest Requirements] (Agent 1)
-         |
-         v
-[Node 2: Generate Specifications] (Agent 1)
-  - Generate Technical Design Document (TDD)
-  - Generate xUnit-Style Test Specification
-         |
-         v
-[Node 3: Human Approval Gate 1] <--- INTERRUPT / AWAIT USER
-  - User reviews specs & approves/edits in chat
-         |
-         v
-[Node 4: Parallel Implementation] (Safe Fork)
-  +---------------------------------------+
-  |                                       |
-  v                                       v
-[Node 4A: Mock API Dev] (Agent 2)      [Node 4B: Channel App Dev] (Agent 3)
-  - Init `mock-vendor-api` repo           - Init `channel-app` repo
-  - Implement mock vendor endpoints       - Implement business services & client
-  - Run dev tests & commit                - Run dev tests & commit
-  |                                       |
-  +-------------------+-------------------+
-                      | (Join / Barrier)
-                      v
-[Node 5: Docker Sandbox Provisioning]
-  - Launch Mock API container (aaise_mock_<id>)
-  - Launch Channel App container (aaise_app_<id>) on shared bridge network
-                      |
-                      v
-[Node 6: Independent Verification] (Parallel Execution)
-  +---------------------------------------+
-  |                                       |
-  v                                       v
-[Node 6A: Black-Box QA] (Agent 4)      [Node 6B: Security Review] (Agent 5)
-  - HTTP test suite execution             - Read-only SAST & secret scan
-  - Record status, payload, latency       - Categorize findings (CRITICAL/HIGH/MED)
-  |                                       |
-  +-------------------+-------------------+
-                      | (Join / Barrier)
-                      v
-[Node 7: Quality Gate Evaluation]
-  - Did all QA tests pass?
-  - Are there zero CRITICAL/HIGH security findings?
-         |
-         +-----------------------+
-         | NO (Defects Found)    | YES (All Gates Passed)
-         v                       v
-[Node 8: Defect Dispatch]     [Node 10: Release Manifest & Pre-Release Tag]
-  (Agent 1)                     - Pair compatible commit hashes
-  - Parse QA failures & SAST    - Generate Release Summary
-  - Create Fix Tasks                     |
-  - Check iteration count                v
-         |                    [Node 11: Human Approval Gate 2] <--- INTERRUPT
-         +---------------+      - User approves release promotion
-         |               |               |
-         | < Max (3)     | >= Max        v
-         v               v    [Node 12: Production Promotion & Tagging]
-[Node 9: Apply Fixes] [Escalate to]     - Fast-forward merge to `main`
-  - Agent 2 (mock fix)  [Human User]     - Apply release tag (e.g., v1.0.0)
-  - Agent 3 (app fix)                    - Emit Completion Event
-         |
-         v
-  [Loop back to Node 5: Sandbox & Retest]
+[Start: Project Created / Workflow Triggered]
+                     |
+                     v
+  [Node 1: Validate Workflow Configuration]
+    - Verify invariant agents (Agent 1 & Agent 3 enabled)
+    - Check dependency compatibility
+                     |
+                     v
+  [Node 2: Ingest Requirements & Generate Specs] (Agent 1 - Mandatory)
+    - Generate Technical Design Document (TDD)
+    - Generate xUnit-Style Test Specification
+                     |
+                     v
+  [Node 3: Human Approval Gate 1: Specs] <--- INTERRUPT / AWAIT USER
+    - User reviews specs & approves/edits in chat
+                     |
+                     +---------------------------------------+
+                     | (Dynamic Conditional Fork)            |
+                     |                                       |
+    [Condition: Is Agent 2 Enabled?]                         | (Always Required)
+          |                     |                            |
+          | YES                 | NO                         |
+          v                     v                            v
+  [Node 4A: Mock API Dev]   [Skip Mock Node]     [Node 4B: Channel App Dev]
+   (Agent 2 -> mock repo)                          (Agent 3 -> channel repo)
+          |                     |                            |
+          +----------+----------+                            |
+                     |                                       |
+                     +-------------------+-------------------+
+                                         | (Join / Barrier)
+                                         v
+                     [Node 5: Docker Sandbox Provisioning]
+                      - Launch Mock container (ONLY if Agent 2 ran)
+                      - Launch Channel container (aaise_app_<id>)
+                                         |
+                     +-------------------+-------------------+
+                     | (Dynamic Conditional Verification)    |
+                     |                                       |
+       [Condition: Is Agent 4 Enabled?]        [Condition: Is Agent 5 Enabled?]
+             |                  |                     |                 |
+             | YES              | NO                  | YES             | NO
+             v                  v                     v                 v
+     [Node 6A: QA Test] [Mark SKIPPED]        [Node 6B: Sec]    [Mark NOT_SCANNED]
+      (Agent 4: HTTP)                          (Agent 5: SAST)
+             |                  |                     |                 |
+             +---------+--------+                     +--------+--------+
+                       |                                       |
+                       +-------------------+-------------------+
+                                           | (Join / Barrier)
+                                           v
+                          [Node 7: Quality Gate Evaluation]
+             - Evaluate defects from enabled verification agents
+             - If defects exist: Dispatch to Agent 1 -> Fix -> Retest (max 3)
+             - If all gates pass (or skipped per configuration):
+                                           |
+                                           v
+                       [Node 8: Human Approval Gate 2: Release] <--- INTERRUPT
+             - Displays test evidence (or SKIPPED notice)
+             - Displays security report (or NOT_SCANNED warning)
+             - User approves release promotion
+                                           |
+                                           v
+                       [Node 9: Production Promotion & Tagging]
+             - Tag release and record GitReleaseManifest
 ```
 
 ---
 
-## 3. LangGraph State Schema (`AAISEWorkflowState`)
+## 3. Dynamic State Schema (`AAISEWorkflowState`)
 
 ```python
 class AAISEWorkflowState(TypedDict):
@@ -88,32 +86,30 @@ class AAISEWorkflowState(TypedDict):
     current_phase: str
     iteration_count: int
     max_iterations: int
-    requirements_text: str
-    uploaded_files: list[str]
     
-    # Specification Artifacts
+    # Dynamic Agent Configuration Flags
+    enabled_agents: list[str]  # e.g., ["Agent 1", "Agent 3", "Agent 5"]
+    is_mock_enabled: bool
+    is_qa_enabled: bool
+    is_security_enabled: bool
+    
+    # Requirements & Specs
+    requirements_text: str
     technical_design_id: str | None
     test_specification_id: str | None
     spec_approval_status: Literal["PENDING", "APPROVED", "REJECTED"]
     
-    # Git & Repository State
-    mock_repo_path: str
+    # Git & Sandboxes
+    mock_repo_path: str | None
     channel_repo_path: str
     mock_commit_hash: str | None
     channel_commit_hash: str | None
-    
-    # Runtime Sandboxes
     mock_container_id: str | None
-    mock_container_port: int | None
     channel_container_id: str | None
-    channel_container_port: int | None
     
-    # QA & Security Verification Results
-    test_run_id: str | None
-    qa_passed: bool
-    qa_failed_count: int
-    security_scan_id: str | None
-    security_passed: bool
+    # Verification Results (Honest Reporting)
+    qa_status: Literal["PASSED", "FAILED", "SKIPPED_BY_CONFIG"]
+    security_status: Literal["PASSED", "FAILED", "NOT_SCANNED_BY_CONFIG"]
     unresolved_defects: list[dict[str, Any]]
     
     # Release Promotion
@@ -123,23 +119,28 @@ class AAISEWorkflowState(TypedDict):
 
 ---
 
-## 4. Checkpointing & Resume Strategy
+## 4. Conditional Edge Routing Logic
 
-### SQL Server Durable Checkpointer
-Standard LangGraph memory checkpoints are volatile. AAISE implements a custom durable checkpointer backed by SQL Server:
-- **Table**: `WorkflowCheckpoints`
-- **Stored Data**: Serialized state JSON, channel versions, node execution history, pending approval payloads.
-- **Resumption**: When the server restarts or a human user approves an action via chat, the orchestrator loads the checkpoint from SQL Server by `workflow_run_id` and resumes execution precisely at the interrupted node.
+```python
+def should_run_mock_api(state: AAISEWorkflowState) -> Literal["mock_dev_node", "skip_mock_node"]:
+    if state["is_mock_enabled"]:
+        return "mock_dev_node"
+    return "skip_mock_node"
+
+def should_run_qa(state: AAISEWorkflowState) -> Literal["qa_test_node", "skip_qa_node"]:
+    if state["is_qa_enabled"]:
+        return "qa_test_node"
+    return "skip_qa_node"
+
+def should_run_security(state: AAISEWorkflowState) -> Literal["security_node", "skip_security_node"]:
+    if state["is_security_enabled"]:
+        return "security_node"
+    return "skip_security_node"
+```
 
 ---
 
-## 5. Human-in-the-Loop Approval Points
-
-The workflow defines two mandatory human approval checkpoints:
-1. **Specification Approval Gate (Node 3)**:
-   - Triggered when Agent 1 finishes the Technical Design Document and Test Specifications.
-   - User reviews API endpoints, data models, and test matrices.
-   - User can approve, request modifications, or clarify ambiguous requirements.
-2. **Release Promotion Approval Gate (Node 11)**:
-   - Triggered when all QA tests pass and zero CRITICAL/HIGH security findings remain.
-   - User reviews the test evidence, security report, and paired Git commit hashes before the orchestrator merges changes to `main`.
+## 5. Checkpointing & State Persistence (SQL Server)
+- **Table**: `WorkflowCheckpoints` in database `AI_SoftwareEngineer`.
+- Every state transition and conditional routing decision is serialized to JSON and durably persisted.
+- Resumption after approval gates or server restarts accurately restores the exact set of enabled agents and execution branches.

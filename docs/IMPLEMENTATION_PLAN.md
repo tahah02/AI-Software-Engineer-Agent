@@ -21,13 +21,13 @@ This document outlines the master implementation sequence for engineering the **
 
 ---
 
-### Phase 1: Platform Foundation, FastAPI Scaffold & SQL Server Database Engine
-- **Step 1.1**: Initialize Python project structure (`pyproject.toml`, virtual environment, directory layout adhering to Clean Architecture).
-- **Step 1.2**: Implement core Domain Entities and Enums (`src/domain/`) with strict typing and Pydantic v2 schemas.
-- **Step 1.3**: Configure SQLAlchemy 2.x engine and session factory for SQL Server with `pyodbc` (`AI_SoftwareEngineer`).
-- **Step 1.4**: Define SQLAlchemy ORM declarative models matching `docs/DATABASE_DESIGN.md`.
+### Phase 1: Platform Foundation, FastAPI Scaffold & Database Persistence
+- **Step 1.1**: Initialize Python project structure (`pyproject.toml`, virtual environment `.venv`, directory layout). [COMPLETED]
+- **Step 1.2**: Implement core Domain Entities and Enums (`src/domain/`) with strict typing, Pydantic v2 schemas, and `ProjectAgentConfig`. [COMPLETED]
+- **Step 1.3**: Configure SQLAlchemy 2.x engine and session factory with SQLite for POC (`./data/aaise.db`) and foreign key enforcement hooks. [COMPLETED]
+- **Step 1.4**: Define SQLAlchemy ORM declarative models matching `docs/DATABASE_DESIGN.md` (including `ProjectAgentConfigORM`).
 - **Step 1.5**: Configure Alembic and generate initial database migration script.
-- **Step 1.6**: Apply migration to local SQL Server instance (`AI_SoftwareEngineer` database) and verify schema via CLI query.
+- **Step 1.6**: Apply migration to SQLite POC database (`./data/aaise.db`) and verify schema via CLI query.
 - **Step 1.7**: Implement FastAPI application scaffold, health check, CORS, and dependency injection setup.
 - **Step 1.8**: Write unit and integration tests for database connectivity and CRUD operations (`pytest -v`).
 
@@ -37,7 +37,7 @@ This document outlines the master implementation sequence for engineering the **
 - **Step 2.1**: Define `ILLMGateway` port interface, request/response models, and token metrics schema.
 - **Step 2.2**: Implement local Dockerized Ollama adapter (`dobai-ollama:11434`, default `qwen2.5-coder:7b` with `qwen2.5:3b` fallback) with JSON repair parser.
 - **Step 2.3**: Implement LiteLLM cloud adapter for Google Gemini (`gemini-3.8-flash`, `gemini-3.5-flash-lite`), Groq (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`), and OpenRouter.
-- **Step 2.4**: Implement dynamic provider switching and per-agent model configuration resolver.
+- **Step 2.4**: Implement dynamic provider switching and per-agent model configuration resolver loading from `ProjectAgentConfigs`.
 - **Step 2.5**: Implement Token Tracking and Invocation Logging service persisted to SQL Server (`TokenUsage`, `LLMInvocations`).
 - **Step 2.6**: Execute live connectivity and validation tests across active providers.
 
@@ -45,11 +45,11 @@ This document outlines the master implementation sequence for engineering the **
 
 ### Phase 3: Git Operations & Docker Sandbox Infrastructure
 - **Step 3.1**: Define `IGitManager` port interface and domain models.
-- **Step 3.2**: Implement local Git manager with dual-repository support (`mock-vendor-api` and `channel-app`).
+- **Step 3.2**: Implement local Git manager with dual-repository support (`mock-vendor-api` when Agent 2 enabled, and `channel-app`).
 - **Step 3.3**: Implement Git worktree creation, cleanup, and branch management (`feature/*`, `fix/*`, `security/*`, `release/*`).
 - **Step 3.4**: Implement Git release manifest pairing and commit hash recorder (`GitReleaseManifests`).
 - **Step 3.5**: Define `ISandboxRunner` port and Docker execution abstraction.
-- **Step 3.6**: Implement Docker Sandbox Manager (container spin-up, resource caps, network isolation, log streaming).
+- **Step 3.6**: Implement Docker Sandbox Manager (dynamic container spin-up, resource caps, network isolation, log streaming).
 - **Step 3.7**: Write integration tests verifying isolated Git operations and container execution.
 
 ---
@@ -64,20 +64,20 @@ This document outlines the master implementation sequence for engineering the **
 
 ---
 
-### Phase 5: LangGraph Multi-Agent Orchestration & Workflow Engine
-- **Step 5.1**: Define LangGraph State schema (`AAISEWorkflowState`) and port interfaces.
+### Phase 5: LangGraph Multi-Agent Orchestration & Dynamic Workflow Engine
+- **Step 5.1**: Define dynamic LangGraph State schema (`AAISEWorkflowState`) with enabled agent flags.
 - **Step 5.2**: Implement SQL Server Durable Checkpointer for LangGraph state persistence (`WorkflowCheckpoints`).
-- **Step 5.3**: Build orchestrator workflow nodes (Node 1 to Node 12) matching `docs/WORKFLOW.md`.
+- **Step 5.3**: Build dynamic conditional router nodes (`should_run_mock_api`, `should_run_qa`, `should_run_security`).
 - **Step 5.4**: Implement Human Approval interrupt gates (Specification Gate & Release Gate) with resume capability.
 - **Step 5.5**: Implement Defect Remediation routing loop with bounded iteration controls (max 3 retries).
 - **Step 5.6**: Expose workflow execution, pause, resume, approval, and cancellation endpoints in FastAPI.
-- **Step 5.7**: Write end-to-end integration tests simulating workflow cycles with mocked/live LLM responses.
+- **Step 5.7**: Write end-to-end integration tests simulating workflow cycles with diverse enabled/disabled agent combinations.
 
 ---
 
 ### Phase 6: Next.js Frontend (Chat Workspace & Agent Dashboards)
 - **Step 6.1**: Initialize Next.js App Router project with TypeScript, Tailwind CSS, and Lucide React adhering to `docs/FRONTEND_DESIGN_SYSTEM.md`.
-- **Step 6.2**: Implement conversational Chat Workspace with real-time SSE streaming, agent identity badges, and collapsible reasoning.
+- **Step 6.2**: Implement conversational Chat Workspace with real-time SSE streaming, agent identity badges, and dynamic agent toggle switches.
 - **Step 6.3**: Build Human Approval interactive modal cards (Specification review, Release promotion).
 - **Step 6.4**: Build Generated Code & File Explorer with syntax-highlighted previews and diff viewer.
 - **Step 6.5**: Build QA Test Execution Dashboard & Defect Tracker.
@@ -88,10 +88,8 @@ This document outlines the master implementation sequence for engineering the **
 ---
 
 ### Phase 7: End-to-End System Verification & Release
-- **Step 7.1**: Ingest a sample Banking Integration Requirements document via Chat UI.
-- **Step 7.2**: Verify autonomous specification generation and approve Specification Gate.
-- **Step 7.3**: Verify parallel generation of Mock API and Channel App repositories.
-- **Step 7.4**: Verify Docker sandbox launch, black-box QA execution, and security audit.
-- **Step 7.5**: Verify simulated defect injection, Agent 1 remediation dispatch, and automated retest pass.
-- **Step 7.6**: Verify paired Release Manifest creation and release promotion to `main`.
-- **Step 7.7**: Compile Final Project Audit Report and documentation package.
+- **Step 7.1**: Ingest a sample Banking Integration Requirements document via Chat UI with all 5 agents enabled.
+- **Step 7.2**: Ingest a standalone CRUD requirements document with Agent 2 (Mock Dev) disabled.
+- **Step 7.3**: Ingest a rapid development document with Agent 4 (QA) disabled and verify honest `SKIPPED` status recording.
+- **Step 7.4**: Verify paired Release Manifest creation and release promotion to `main`.
+- **Step 7.5**: Compile Final Project Audit Report and documentation package.
