@@ -254,7 +254,7 @@ class TokenUsageORM(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     total_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
-    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float, default=None, nullable=True)
 
     llm_invocation: Mapped["LLMInvocationORM"] = relationship(back_populates="token_usage")
 

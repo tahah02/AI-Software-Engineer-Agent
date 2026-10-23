@@ -13,6 +13,13 @@ class TargetLanguage(str, Enum):
     NODEJS = "nodejs"
 
 
+class LLMProvider(str, Enum):
+    GEMINI = "gemini"
+    GROQ = "groq"
+    OPENROUTER = "openrouter"
+    OLLAMA = "ollama"
+
+
 class AgentType(str, Enum):
     DOC_REVIEWER = "Agent 1: Documentation Reviewer"
     MOCK_DEVELOPER = "Agent 2: Mock Vendor API Developer"

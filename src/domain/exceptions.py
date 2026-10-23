@@ -30,3 +30,27 @@ class ApprovalPendingError(AAISEException):
         super().__init__(f"Action blocked by pending human approval gate '{gate_type}' (ID: {approval_id}).")
         self.gate_type = gate_type
         self.approval_id = approval_id
+
+
+class LLMError(AAISEException):
+    def __init__(self, provider: str, model: str, message: str) -> None:
+        super().__init__(f"[{provider}/{model}] {message}")
+        self.provider = provider
+        self.model = model
+
+
+class LLMRateLimitError(LLMError):
+    pass
+
+
+class LLMTimeoutError(LLMError):
+    pass
+
+
+class LLMAuthError(LLMError):
+    pass
+
+
+class LLMModelNotFoundError(LLMError):
+    pass
+

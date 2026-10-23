@@ -1,0 +1,72 @@
+{
+  "version": "1.0.0",
+  "providers": {
+    "ollama": {
+      "default_model": "qwen2.5-coder:7b",
+      "fallback_model": "qwen2.5:3b",
+      "available_models": [
+        "qwen2.5-coder:7b",
+        "qwen2.5:3b"
+      ],
+      "pricing": {
+        "qwen2.5-coder:7b": {
+          "prompt_cost_per_1k": 0.0,
+          "completion_cost_per_1k": 0.0
+        },
+        "qwen2.5:3b": {
+          "prompt_cost_per_1k": 0.0,
+          "completion_cost_per_1k": 0.0
+        }
+      }
+    },
+    "gemini": {
+      "default_model": "gemini-3.8-flash",
+      "fallback_model": "gemini-3.5-flash-lite",
+      "available_models": [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite"
+      ],
+      "pricing": {
+        "gemini-3.8-flash": {
+          "prompt_cost_per_1k": 0.000125,
+          "completion_cost_per_1k": 0.000375
+        },
+        "gemini-3.5-flash-lite": {
+          "prompt_cost_per_1k": 0.000075,
+          "completion_cost_per_1k": 0.0003
+        }
+      }
+    },
+    "groq": {
+      "default_model": "openai/gpt-oss-120b",
+      "fallback_model": "qwen/qwen3.8-27b",
+      "available_models": [
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b"
+      ],
+      "pricing": {
+        "openai/gpt-oss-120b": {
+          "prompt_cost_per_1k": 0.0005,
+          "completion_cost_per_1k": 0.0015
+        },
+        "qwen/qwen3.8-27b": {
+          "prompt_cost_per_1k": 0.0002,
+          "completion_cost_per_1k": 0.0006
+        }
+      }
+    },
+    "openrouter": {
+      "default_model": "openai/gpt-oss-120b",
+      "fallback_model": null,
+      "available_models": [
+        "openai/gpt-oss-120b"
+      ],
+      "pricing": {
+        "openai/gpt-oss-120b": {
+          "prompt_cost_per_1k": 0.0005,
+          "completion_cost_per_1k": 0.0015
+        }
+      }
+    }
+  }
+}
