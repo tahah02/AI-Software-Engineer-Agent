@@ -1,32 +1,29 @@
 import uuid
 from typing import Any
-
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.domain.enums import AgentType, LLMProvider
-from src.domain.exceptions import EntityNotFoundError, ValidationError
+from src.domain.exceptions import ConfigurationError, EntityNotFoundError, ValidationError
 from src.infrastructure.config import settings
 from src.infrastructure.db.models import ProjectAgentConfigORM
 from src.infrastructure.llm.litellm_adapter import LiteLLMAdapter
 from src.infrastructure.llm.ollama_adapter import OllamaAdapter
-from src.ports.llm_gateway import (
-    ILLMGateway,
-    LLMMessage,
-    LLMRequest,
-    LLMResponse,
-)
+from src.ports.llm_gateway import ILLMGateway, LLMMessage, LLMRequest
 
 
 class ResolvedAgentExecutionConfig:
     def __init__(
         self,
-        project_id: uuid.UUID,
+        project_id: uuid.UUID | None,
         agent_type: str,
         provider: LLMProvider,
         model: str,
         adapter: ILLMGateway,
         custom_system_prompt: str | None = None,
+        fallback_provider: LLMProvider | None = None,
+        fallback_model: str | None = None,
+        fallback_adapter: ILLMGateway | None = None,
     ) -> None:
         self.project_id = project_id
         self.agent_type = agent_type
@@ -34,28 +31,31 @@ class ResolvedAgentExecutionConfig:
         self.model = model
         self.adapter = adapter
         self.custom_system_prompt = custom_system_prompt
+        self.fallback_provider = fallback_provider
+        self.fallback_model = fallback_model
+        self.fallback_adapter = fallback_adapter
 
 
 class LLMProviderResolver:
-    def __init__(
-        self,
-        ollama_adapter: ILLMGateway | None = None,
-        litellm_adapter: ILLMGateway | None = None,
-    ) -> None:
-        self.ollama_adapter = ollama_adapter or OllamaAdapter()
-        self.litellm_adapter = litellm_adapter or LiteLLMAdapter()
+    def __init__(self) -> None:
+        self._adapters: dict[LLMProvider, ILLMGateway] = {}
 
     def _get_adapter(self, provider: LLMProvider) -> ILLMGateway:
-        if provider == LLMProvider.OLLAMA:
-            return self.ollama_adapter
-        if provider in (LLMProvider.GEMINI, LLMProvider.GROQ, LLMProvider.OPENROUTER):
-            return self.litellm_adapter
-        raise ValidationError("provider", f"Unsupported LLM provider '{provider.value}'")
+        if provider not in self._adapters:
+            if provider == LLMProvider.OLLAMA:
+                self._adapters[provider] = OllamaAdapter()
+            elif provider in (LLMProvider.GEMINI, LLMProvider.GROQ, LLMProvider.OPENROUTER):
+                self._adapters[provider] = LiteLLMAdapter()
+            else:
+                raise ConfigurationError(
+                    f"Unsupported LLM provider '{provider.value}'. "
+                    f"Supported providers are: {[p.value for p in LLMProvider]}"
+                )
+        return self._adapters[provider]
 
     def _parse_provider(self, provider_str: str) -> LLMProvider:
-        clean = provider_str.strip().lower()
         try:
-            return LLMProvider(clean)
+            return LLMProvider(provider_str.lower().strip())
         except ValueError:
             valid_providers = [p.value for p in LLMProvider]
             raise ValidationError(
@@ -65,19 +65,57 @@ class LLMProviderResolver:
 
     def resolve_agent_config(
         self,
-        session: Session,
-        project_id: uuid.UUID,
+        session: Session | None,
+        project_id: uuid.UUID | None,
         agent: AgentType | str,
     ) -> ResolvedAgentExecutionConfig:
         agent_str = agent.value if isinstance(agent, AgentType) else str(agent)
+        agent_key = agent_str
+        if "1" in agent_str or "Documentation" in agent_str:
+            agent_key = "AGENT_1"
+        elif "2" in agent_str or "Mock" in agent_str:
+            agent_key = "AGENT_2"
+        elif "3" in agent_str or "Main" in agent_str:
+            agent_key = "AGENT_3"
+        elif "4" in agent_str or "QA" in agent_str:
+            agent_key = "AGENT_4"
+        elif "5" in agent_str or "Security" in agent_str:
+            agent_key = "AGENT_5"
 
-        stmt = select(ProjectAgentConfigORM).where(
-            ProjectAgentConfigORM.project_id == project_id,
-            ProjectAgentConfigORM.agent_type == agent_str,
-        )
-        config_orm = session.scalar(stmt)
+        config_orm = None
+        if session and project_id:
+            stmt = select(ProjectAgentConfigORM).where(
+                ProjectAgentConfigORM.project_id == project_id,
+                or_(
+                    ProjectAgentConfigORM.agent_type == agent_str,
+                    ProjectAgentConfigORM.agent_type == agent_key,
+                ),
+            )
+            config_orm = session.scalar(stmt)
 
         if config_orm is None:
+            # Fall back directly to centralized agent_assignments in llm_config.json
+            assignment = settings.llm_config.agent_assignments.get(agent_key)
+            if assignment:
+                provider = assignment.provider
+                adapter = self._get_adapter(provider)
+                fallback_adapter = None
+                if assignment.fallback_provider:
+                    try:
+                        fallback_adapter = self._get_adapter(assignment.fallback_provider)
+                    except Exception:
+                        fallback_adapter = None
+
+                return ResolvedAgentExecutionConfig(
+                    project_id=project_id,
+                    agent_type=agent_str,
+                    provider=provider,
+                    model=assignment.model,
+                    adapter=adapter,
+                    fallback_provider=assignment.fallback_provider,
+                    fallback_model=assignment.fallback_model,
+                    fallback_adapter=fallback_adapter,
+                )
             raise EntityNotFoundError("ProjectAgentConfig", f"project={project_id}, agent={agent_str}")
 
         if not config_orm.is_enabled:
@@ -100,6 +138,18 @@ class LLMProviderResolver:
                     f"No model configured for agent '{agent_str}' and no default model found in llm_config.json for provider '{provider.value}'",
                 )
 
+        fallback_provider = None
+        fallback_model = None
+        fallback_adapter = None
+        assignment = settings.llm_config.agent_assignments.get(agent_key)
+        if assignment and assignment.fallback_provider and assignment.fallback_model:
+            fallback_provider = assignment.fallback_provider
+            fallback_model = assignment.fallback_model
+            try:
+                fallback_adapter = self._get_adapter(fallback_provider)
+            except Exception:
+                fallback_adapter = None
+
         return ResolvedAgentExecutionConfig(
             project_id=project_id,
             agent_type=agent_str,
@@ -107,6 +157,9 @@ class LLMProviderResolver:
             model=model,
             adapter=adapter,
             custom_system_prompt=config_orm.custom_system_prompt,
+            fallback_provider=fallback_provider,
+            fallback_model=fallback_model,
+            fallback_adapter=fallback_adapter,
         )
 
     def build_agent_request(
@@ -118,45 +171,17 @@ class LLMProviderResolver:
     ) -> LLMRequest:
         prepared_messages: list[LLMMessage] = []
 
-        system_parts: list[str] = []
-        if base_system_prompt and base_system_prompt.strip():
-            system_parts.append(base_system_prompt.strip())
-        if resolved_config.custom_system_prompt and resolved_config.custom_system_prompt.strip():
-            system_parts.append(
-                f"[Project Custom Instructions (Supplementary - Mandatory Base Instructions Take Precedence)]:\n{resolved_config.custom_system_prompt.strip()}"
-            )
+        system_prompt = resolved_config.custom_system_prompt or base_system_prompt
+        if system_prompt:
+            prepared_messages.append(LLMMessage(role="system", content=system_prompt))
 
-        if system_parts:
-            prepared_messages.append(LLMMessage(role="system", content="\n\n".join(system_parts)))
-
-        for msg in messages:
-            if msg.role != "system":
-                prepared_messages.append(msg)
-
-        if not prepared_messages:
-            raise ValidationError("messages", "Cannot build an LLMRequest with no messages.")
+        prepared_messages.extend(messages)
 
         return LLMRequest(
             provider=resolved_config.provider,
             model=resolved_config.model,
             messages=prepared_messages,
+            fallback_provider=resolved_config.fallback_provider,
+            fallback_model=resolved_config.fallback_model,
             **kwargs,
         )
-
-    async def execute_agent(
-        self,
-        session: Session,
-        project_id: uuid.UUID,
-        agent: AgentType | str,
-        messages: list[LLMMessage],
-        base_system_prompt: str | None = None,
-        **request_kwargs: Any,
-    ) -> LLMResponse:
-        resolved = self.resolve_agent_config(session, project_id, agent)
-        request = self.build_agent_request(
-            resolved,
-            messages=messages,
-            base_system_prompt=base_system_prompt,
-            **request_kwargs,
-        )
-        return await resolved.adapter.complete(request)

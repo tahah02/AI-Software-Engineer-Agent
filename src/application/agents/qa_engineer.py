@@ -93,6 +93,8 @@ class QAEngineerAgent(BaseAgent):
         request = LLMRequest(
             provider=resolved_config.provider,
             model=resolved_config.model,
+            fallback_provider=resolved_config.fallback_provider,
+            fallback_model=resolved_config.fallback_model,
             messages=messages,
             response_schema={"type": "json_object"},
             temperature=0.0,

@@ -20,20 +20,22 @@
       }
     },
     "gemini": {
-      "default_model": "gemini-3.8-flash",
-      "fallback_model": "gemini-3.5-flash-lite",
+      "default_model": "gemini-3.1-flash-lite",
+      "fallback_model": "gemini-flash-latest",
       "available_models": [
-        "gemini-3.8-flash",
-        "gemini-3.5-flash-lite"
+        "gemini-3.1-flash-lite",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-3-flash-preview"
       ],
       "pricing": {
-        "gemini-3.8-flash": {
+        "gemini-3.1-flash-lite": {
+          "prompt_cost_per_1k": 7.5e-05,
+          "completion_cost_per_1k": 0.0003
+        },
+        "gemini-flash-latest": {
           "prompt_cost_per_1k": 0.000125,
           "completion_cost_per_1k": 0.000375
-        },
-        "gemini-3.5-flash-lite": {
-          "prompt_cost_per_1k": 0.000075,
-          "completion_cost_per_1k": 0.0003
         }
       }
     },
@@ -67,6 +69,38 @@
           "completion_cost_per_1k": 0.0015
         }
       }
+    }
+  },
+  "agent_assignments": {
+    "AGENT_1": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "fallback_provider": "groq",
+      "fallback_model": "openai/gpt-oss-120b"
+    },
+    "AGENT_2": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
+    },
+    "AGENT_3": {
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
+    },
+    "AGENT_4": {
+      "provider": "groq",
+      "model": "qwen/qwen3.8-27b",
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
+    },
+    "AGENT_5": {
+      "provider": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "fallback_provider": "groq",
+      "fallback_model": "openai/gpt-oss-120b"
     }
   }
 }

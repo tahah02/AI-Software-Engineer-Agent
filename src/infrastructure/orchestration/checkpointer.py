@@ -40,7 +40,7 @@ class WorkflowCheckpointService:
             )
             self.db.add(checkpoint)
 
-        self.db.flush()
+        self.db.commit()
         return checkpoint
 
     def load_checkpoint(

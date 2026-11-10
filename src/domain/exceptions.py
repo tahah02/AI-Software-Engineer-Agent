@@ -54,3 +54,7 @@ class LLMAuthError(LLMError):
 class LLMModelNotFoundError(LLMError):
     pass
 
+
+class ConfigurationError(AAISEException):
+    pass
+

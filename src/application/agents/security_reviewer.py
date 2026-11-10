@@ -70,7 +70,7 @@ class SecurityReviewerAgent(BaseAgent):
         all_files = execute_list_files(repo_path)
         for rel in all_files:
             # Skip binary, git, or lockfiles
-            if any(rel.endswith(ext) for ext in (".py", ".json", ".yaml", ".yml", ".ts", ".js", ".cs", ".txt")):
+            if any(rel.endswith(ext) for ext in (".py", ".json", ".yaml", ".yml", ".ts", ".tsx", ".js", ".jsx", ".cs", ".txt")):
                 try:
                     content = execute_file_read(repo_path, rel)
                     files_content[rel] = content[:3000]  # truncate huge files safely
@@ -105,6 +105,8 @@ class SecurityReviewerAgent(BaseAgent):
         request = LLMRequest(
             provider=resolved_config.provider,
             model=resolved_config.model,
+            fallback_provider=resolved_config.fallback_provider,
+            fallback_model=resolved_config.fallback_model,
             messages=messages,
             response_schema={"type": "json_object"},
             temperature=0.0,

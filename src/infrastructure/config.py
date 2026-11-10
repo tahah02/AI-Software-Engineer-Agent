@@ -18,9 +18,17 @@ class ProviderConfig(BaseModel):
     pricing: dict[str, ModelPricing] = Field(default_factory=dict)
 
 
+class AgentModelAssignment(BaseModel):
+    provider: LLMProvider
+    model: str
+    fallback_provider: LLMProvider | None = None
+    fallback_model: str | None = None
+
+
 class LLMConfigFile(BaseModel):
     version: str = "1.0.0"
     providers: dict[LLMProvider, ProviderConfig]
+    agent_assignments: dict[str, AgentModelAssignment] = Field(default_factory=dict)
 
 
 class Settings(BaseSettings):

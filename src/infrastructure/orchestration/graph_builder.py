@@ -8,15 +8,17 @@ from src.domain.workflow_state import WorkflowState
 
 def route_after_spec_approval(state: WorkflowState) -> str:
     # If human requested revisions or rejected specs, loop back to Agent 1 (Doc Reviewer)
-    if not state.get("spec_approved", True):
-        # Incorporate human revision feedback into user_requirement
-        comments = state.get("spec_approval_comments")
-        if comments:
-            state["user_requirement"] = (
-                f"{state.get('user_requirement', '')}\n\n"
-                f"[Human Revision Request]: {comments}"
-            )
+    comments = state.get("spec_approval_comments")
+    if comments:
+        state["user_requirement"] = (
+            f"{state.get('user_requirement', '')}\n\n"
+            f"[Human Revision Request]: {comments}"
+        )
         return "doc_reviewer"
+
+    # If human approval has not been granted yet, stop workflow and wait for human approval
+    if not state.get("spec_approved", False):
+        return END
 
     enabled = state.get("enabled_agents", {})
     if enabled.get(AgentType.MOCK_DEVELOPER.name, False) or enabled.get("MOCK_DEVELOPER", False):
@@ -36,7 +38,7 @@ def route_after_qa(state: WorkflowState) -> str:
     remediation_count = state.get("defect_remediation_count", 0)
 
     # Remediation loop: if QA failed and attempts < 3, loop back to Coder
-    if qa_status == "FAILED" and remediation_count < 3:
+    if str(qa_status).startswith("FAILED") and remediation_count < 3:
         return "remediate_defect"
 
     return "check_security"
@@ -108,7 +110,7 @@ class WorkflowGraphBuilder:
         workflow.set_entry_point("doc_reviewer")
         workflow.add_edge("doc_reviewer", "spec_approval_gate")
 
-        # Dynamic routing after spec approval (Revision loop vs Agent 2 Mock Dev vs Agent 3 Coder)
+        # Dynamic routing after spec approval (Revision loop vs Agent 2 Mock Dev vs Agent 3 Coder vs Pause at END)
         workflow.add_conditional_edges(
             "spec_approval_gate",
             route_after_spec_approval,
@@ -116,6 +118,7 @@ class WorkflowGraphBuilder:
                 "doc_reviewer": "doc_reviewer",
                 "mock_developer": "mock_developer",
                 "main_coder": "main_coder",
+                END: END,
             },
         )
         workflow.add_edge("mock_developer", "main_coder")

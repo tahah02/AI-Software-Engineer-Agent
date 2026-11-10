@@ -43,6 +43,8 @@ class LLMRequest(BaseModel):
     max_tokens: int | None = Field(default=None, ge=1)
     timeout_seconds: float = Field(default=60.0, gt=0.0)
     max_retries: int = Field(default=2, ge=0, le=5)
+    fallback_model: str | None = None
+    fallback_provider: LLMProvider | None = None
 
 
 class TokenUsage(BaseModel):

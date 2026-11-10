@@ -1,3 +1,5 @@
+import os
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 

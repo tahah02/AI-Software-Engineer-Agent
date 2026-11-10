@@ -1,9 +1,14 @@
+import logging
 import asyncio
 import json
 import time
 from typing import Any
 
+import os
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 import litellm
+litellm.telemetry = False
+litellm.suppress_debug_info = True
 
 from src.domain.enums import LLMProvider
 from src.domain.exceptions import (
@@ -21,6 +26,9 @@ from src.ports.llm_gateway import (
     TokenUsage,
     ToolCall,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class LiteLLMAdapter(ILLMGateway):
@@ -49,9 +57,16 @@ class LiteLLMAdapter(ILLMGateway):
         # LiteLLM routes Gemini via "gemini/<model>", Groq via "groq/<model>", OpenRouter via "openrouter/<model>"
         clean_model = model.strip()
         prefix = f"{provider.value}/"
-        if not clean_model.startswith(prefix):
-            return f"{prefix}{clean_model}"
-        return clean_model
+        if clean_model.startswith(prefix):
+            clean_model = clean_model[len(prefix):]
+        if provider == LLMProvider.GEMINI and clean_model in (
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-3.8-flash",
+            "gemini-2.5-flash",
+        ):
+            clean_model = "gemini-3.1-flash-lite"
+        return f"{prefix}{clean_model}"
 
     def _redact_secrets(self, text: str) -> str:
         redacted = text
@@ -131,10 +146,7 @@ class LiteLLMAdapter(ILLMGateway):
             ]
 
         if request.response_schema is not None:
-            kwargs["response_format"] = {
-                "type": "json_object",
-                "response_schema": request.response_schema,
-            }
+            kwargs["response_format"] = {"type": "json_object"}
 
         start_time = time.perf_counter()
         attempts = 0
@@ -209,11 +221,12 @@ class LiteLLMAdapter(ILLMGateway):
 
             except litellm.NotFoundError as exc:
                 clean_msg = self._redact_secrets(str(exc))
-                raise LLMModelNotFoundError(
+                last_exception = LLMModelNotFoundError(
                     provider=request.provider.value,
                     model=model_name,
                     message=f"Model not found or unavailable: {clean_msg}",
-                ) from exc
+                )
+                break
 
             except litellm.RateLimitError as exc:
                 clean_msg = self._redact_secrets(str(exc))
@@ -225,7 +238,7 @@ class LiteLLMAdapter(ILLMGateway):
                 if attempts < max_attempts:
                     await asyncio.sleep(1.0 * attempts)
                     continue
-                raise last_exception from exc
+                break
 
             except litellm.Timeout as exc:
                 clean_msg = self._redact_secrets(str(exc))
@@ -237,7 +250,7 @@ class LiteLLMAdapter(ILLMGateway):
                 if attempts < max_attempts:
                     await asyncio.sleep(0.5 * attempts)
                     continue
-                raise last_exception from exc
+                break
 
             except Exception as exc:
                 clean_msg = self._redact_secrets(str(exc))
@@ -246,12 +259,31 @@ class LiteLLMAdapter(ILLMGateway):
                     model=model_name,
                     message=f"Provider error: {clean_msg}",
                 )
-                # Retry transient connection errors only
-                if attempts < max_attempts and "connection" in clean_msg.lower():
-                    await asyncio.sleep(0.5 * attempts)
+                # Retry transient connection and 503 overload errors
+                if attempts < max_attempts and any(k in clean_msg.lower() for k in ("connection", "503", "overloaded", "unavailable", "timeout")):
+                    await asyncio.sleep(1.0 * attempts)
                     continue
-                raise last_exception from exc
+                break
 
         if last_exception:
+            fb_model = getattr(request, "fallback_model", None)
+            fb_provider = getattr(request, "fallback_provider", None)
+            if fb_model and fb_model != model_name:
+                fallback_req = LLMRequest(
+                    provider=fb_provider or request.provider,
+                    model=fb_model,
+                    messages=request.messages,
+                    tools=request.tools,
+                    response_schema=request.response_schema,
+                    temperature=request.temperature,
+                    max_tokens=request.max_tokens,
+                    timeout_seconds=request.timeout_seconds,
+                    max_retries=request.max_retries,
+                )
+                logger.warning(
+                    f"Primary model {model_name} failed ({last_exception}). "
+                    f"Failing over to fallback {request.fallback_model}..."
+                )
+                return await self.complete(fallback_req)
             raise last_exception
         raise LLMError(provider=request.provider.value, model=model_name, message="Unexpected retry loop termination")

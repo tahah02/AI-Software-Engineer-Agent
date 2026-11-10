@@ -61,3 +61,12 @@ class IGitService(Protocol):
         security_scan_id: uuid.UUID | None = None,
     ) -> Any:
         ...
+
+    def push_to_remote(
+        self,
+        project_id: uuid.UUID,
+        repo_type: RepositoryType | str,
+        remote_url: str,
+        branch_name: str | None = None,
+    ) -> dict[str, Any]:
+        ...

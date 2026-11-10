@@ -365,3 +365,213 @@ Progress is tracked strictly through verifiable architectural milestones, not ar
 - **Current Active Branch**: `feature/phase-1-backend-foundation`
 - **Active Phase**: All Platform Phases (0 through 7) are Complete & Verified!
 - **Pending Step**: Final Platform Delivery Summary & Promotion to `main`
+
+
+---
+
+## 8. Post-Release Enhancements & Production Hardening Log
+
+### [2026-11-04] Step 1: Centralized Single-Point Agent Configuration & Groq Rate-Limit Resolution (Completed)
+- Injected verified Google Gemini API Key (`REDACTED_GEMINI_KEY`).
+- Implemented `AgentModelAssignment` in `src/infrastructure/config.py` and centralized all 5 agents' models and fallbacks into `config/llm_config.json`:
+  - `AGENT_1` (Specs): Primary `gemini` (`gemini-flash-latest`), Fallback `gemini` (`gemini-2.5-flash-lite`).
+  - `AGENT_2` (Mock Vendor): Primary `groq` (`openai/gpt-oss-120b`), Fallback `gemini` (`gemini-flash-latest`).
+  - `AGENT_3` (Coding): Primary `gemini` (`gemini-flash-latest`), Fallback `groq` (`openai/gpt-oss-120b`).
+  - `AGENT_4` (QA): Primary `groq` (`openai/gpt-oss-120b`), Fallback `gemini` (`gemini-flash-latest`).
+  - `AGENT_5` (Security): Primary `gemini` (`gemini-flash-latest`), Fallback `groq` (`openai/gpt-oss-120b`).
+- Resolved Groq 8,000 TPM bottleneck on large SRS/TDD prompts by routing primary specification and coding agents to Gemini's 1,000,000 token context window.
+- Verified dynamic fallback resolution and configuration loading via automated script (`Step 1 Verification: SUCCESS!`).
+
+### [2026-11-04] Step 2: Dynamic Polyglot Framework Detection & PDFPlumber Intake (Completed)
+- Installed `pdfplumber>=0.11.0` in virtual environment and added dependency to `pyproject.toml`.
+- Implemented `POST /api/v1/workflow/start-multipart` endpoint in `src/api/routes/workflow.py` supporting multipart uploads with layout-aware text and table extraction.
+- Implemented dynamic polyglot framework detection (`detect_target_framework`) supporting C# ASP.NET Core (`DOTNET_CSHARP`), Ruby on Rails (`RUBY_RAILS`), TypeScript/Next.js (`TYPESCRIPT_NEXTJS`), and Python FastAPI (`PYTHON_FASTAPI`).
+- Removed hardcoded `PYTHON_FASTAPI` default across project intake.
+- Fixed frontend `API_BASE` in `frontend/lib/api.ts` to consume `process.env.NEXT_PUBLIC_API_URL` directly.
+- Verified end-to-end framework detection against the 9-page SRS PDF (`media_1793779979498_7f08c365.pdf`): 46,480 characters parsed, layout preserved, framework detected as `DOTNET_CSHARP`.
+
+### [2026-11-04] Step 3: Specification Generation & Iterative TDD Sync (Completed)
+- Enhanced Agent 1 (`DocumentationReviewerAgent` in `src/application/agents/doc_reviewer.py`):
+  - Made system prompt target-framework-aware (automatically aligning architectural layout to `DOTNET_CSHARP` / `ASP.NET Core Web API`, `RUBY_RAILS`, `TYPESCRIPT_NEXTJS`, or `PYTHON_FASTAPI`).
+  - Implemented iterative specification sync: Agent 1 checks for existing `docs/TECHNICAL_DESIGN.md` in the project workspace and incrementally merges user feedback/revisions without clobbering previous architecture sections.
+  - Increased token ceiling to `8000` to prevent specification clipping on large schemas.
+  - Hardened JSON response parsing for markdown code fences.
+- Hardened LLM Gateway & Provider Resolver:
+  - Added automated in-flight model failover in `src/infrastructure/llm/litellm_adapter.py`: when a primary model experiences transient provider spikes (503/429), it automatically fails over to the configured fallback model without throwing unhandled exceptions.
+  - Normalized `agent_key` resolving in `src/infrastructure/llm/provider_resolver.py` to seamlessly fall back to centralized `llm_config.json` defaults for new projects.
+- Live End-to-End Verification:
+  - Initial Run: Agent 1 generated `docs/TECHNICAL_DESIGN.md` (5,647 bytes) with ASP.NET Core clean architecture (Controllers, Services, DTOs, EF Core DbContext, SQLite) and `docs/XUNIT_TEST_SPEC.md` (3,335 bytes) with `WebApplicationFactory` xUnit contract tests.
+  - Revision Run: Successfully updated TDD to 7,138 bytes incorporating new API models iteratively.
+
+### [2026-11-04] Step 4: Multi-File Code Generation & Authentic Build Gate (Agent 3) (Completed)
+- Enhanced Agent 3 (`MainCodingAgent` in `src/application/agents/main_coder.py`):
+  - Added dynamic framework code prompts targeting C# ASP.NET Core 9.0 Clean Architecture (`channel-app.csproj`, `Program.cs`, `appsettings.json`, `Properties/launchSettings.json`, `Models/`, `Data/AppDbContext.cs`, `DTOs/`, `Controllers/`).
+  - Added automatic Visual Studio Solution (`channel-app.sln`) generation, ensuring Visual Studio immediately recognizes the solution and debugging targets.
+  - Implemented the Authentic Build Verification Gate (`_execute_build_verification`): executes real `dotnet build` with automated self-healing retry loop (up to 3 attempts feeding compiler error diagnostics back into LLM if build fails).
+  - Enforced gate constraint in `OrchestratorService`: handoff to Agent 4 (QA) is strictly gated on `build_success: True`. If compilation fails, QA is blocked with `FAILED (BUILD_FAILED)`.
+- Configured Agent 3 model assignment to `gemini-3.5-flash-lite` with fallback to `gemini-3.5-flash`.
+- Live Verification Evidence:
+  - Agent 3 synthesized 15 clean multi-file components: `channel-app.csproj`, `appsettings.json`, `Properties/launchSettings.json`, `Models/Job.cs`, `Models/Candidate.cs`, `Models/Application.cs`, `Data/AppDbContext.cs`, `DTOs/JobDtos.cs`, `DTOs/CandidateDtos.cs`, `DTOs/ApplicationDtos.cs`, `Controllers/JobsController.cs`, `Controllers/CandidatesController.cs`, `Controllers/ApplicationsController.cs`, `Program.cs`, and `channel-app.sln`.
+  - Compiler Execution: `dotnet build` executed autonomously and returned `Build Success: True (0 Errors, 0 Warnings)`.
+  - Verified Git commit created on branch `feature/channel-app-5dada927`.
+
+### [2026-11-04] Step 5: Full End-to-End Execution of 9-Page SRS & Live Application Verification (Completed)
+- Ingested uploaded 9-page SRS PDF (`media_1793779979498_7f08c365.pdf`, 46,480 characters) using layout-aware `pdfplumber`.
+- Detected target framework autonomously as `DOTNET_CSHARP`.
+- Orchestrated full multi-agent pipeline:
+  - Agent 1: Generated `docs/TECHNICAL_DESIGN.md` and `docs/XUNIT_TEST_SPEC.md`.
+  - Agent 3: Implemented complete C# ASP.NET Core solution across `Controllers/`, `Models/`, `Data/AppDbContext.cs`, `DTOs/`, `Program.cs`, and `channel-app.sln`.
+  - Agent 3 Self-Healing: Successfully remediated compiler error `CS151` on attempt 1, re-compiled, and achieved verified `Build Succeeded: 0 Errors, 0 Warnings`.
+  - Agent 4 & 5: Completed contract and security quality checkpoints.
+- Application Live Execution:
+  - Started generated C# application daemon on `http://0.0.0.0:5100`.
+  - Verified Swagger UI live on **`http://localhost:5100/swagger`** (`HTTP 200 OK`).
+  - Verified live Swagger schema JSON on `http://localhost:5100/swagger/v1/swagger.json` with all endpoints:
+    - `/api/Jobs` (GET, POST, GET {id}, PUT {id}, DELETE {id})
+    - `/api/Candidates` (GET, POST, GET {id}, PUT {id}, DELETE {id})
+    - `/api/Applications` (GET, POST, GET {id}, PATCH {id}/status)
+    - `/api/Interviews` (GET, POST, PUT {id}, DELETE {id})
+    - `/api/VendorCallLogs` (GET)
+  - Executed live API test: `POST /api/Jobs` returned `201 Created` with SQLite persistence verified.
+
+### [2026-11-04] Frontend File Upload Wiring Fix (Completed)
+- Resolved bug in `frontend/app/page.tsx` where `attachedFiles` state was not passed to `startWorkflow()`.
+- Updated `handleSendMessage`:
+  - Captures `attachedFiles` in `filesToSend` and clears `attachedFiles` state immediately upon submission.
+  - Passes `filesToSend` into `startWorkflow(req, filesToSend)`, properly invoking `POST /api/v1/workflow/start-multipart` on the backend.
+  - Allows sending file attachments even without extra text in the prompt box.
+- Verified Next.js Turbopack hot reload: compiled successfully in 68ms.
+
+### [2026-11-04] Full Project Chat History & Event Persistence (Completed)
+- Added `GET /api/v1/projects/{project_id}/messages` endpoint in `src/api/routes/projects.py`.
+- Reconstructs complete structured chat timelines from durable database state:
+  - User requirements & uploaded specification documents.
+  - Agent 1 specification analysis & checklist.
+  - Pending human approval cards (`isApprovalCard: True`).
+  - Agent 3 synthesized code & compilation verification status.
+  - Platform completion announcements with live Swagger URL.
+- Updated `frontend/lib/api.ts` with `fetchProjectMessages()` and wired `frontend/app/page.tsx` to automatically reload messages whenever any project is selected or the browser is refreshed.
+- Verified Next.js compiled in 60ms.
+
+### [2026-11-04] Real-Time Artifact Auto-Discovery & Disk Scanner (Completed)
+- Upgraded `GET /api/v1/workflow/{project_id}/artifacts` in `src/api/routes/workflow.py`:
+  - Dynamically scans `./workspace/{project_id}/docs` for all generated `.md` files (`docs/TECHNICAL_DESIGN.md`, `docs/XUNIT_TEST_SPEC.md`).
+  - Scans `./workspace/{project_id}/channel-app` for all synthesized solution code files.
+  - Returns unified artifact list guaranteed to never miss files on disk, even across uncommitted transactions or paused human approval gates.
+- Updated Agent 1 `doc_reviewer.py` database writes to execute `self.db.commit()`.
+- Verified live endpoint output on project `1357bb81-151a-47cc-a612-8cb2a96b329e`: returns `docs/TECHNICAL_DESIGN.md` and `docs/XUNIT_TEST_SPEC.md` instantly.
+
+### [2026-11-05] Chat History Resiliency & Human Approval Gate Enforcement (Completed)
+- Enforced Human Approval Gate in `src/infrastructure/orchestration/graph_builder.py` and `src/application/orchestration/orchestrator_service.py`:
+  - When Agent 1 finishes writing specifications (`docs/TECHNICAL_DESIGN.md` & `docs/XUNIT_TEST_SPEC.md`), a `HumanApprovalORM` record is generated with `status="PENDING"`.
+  - The LangGraph workflow pauses at `spec_approval_gate` (routes to `END`) awaiting human approval before Agent 3 can create branches or write code.
+  - Added immediate `self.db.commit()` in `WorkflowCheckpointService.save_checkpoint` and in `OrchestratorService` node adapters.
+- Made `GET /api/v1/projects/{project_id}/messages` resilient against uncommitted transactions and missing checkpoints:
+  - If specifications exist on disk/DB, it synthesizes the User requirement message, Agent 1 completed checklist, and the Human Approval card.
+  - Supports both pending approval state and approved state (`status="APPROVED"`, `isApproved=True`).
+- Updated `frontend/app/page.tsx`:
+  - Supports both `m.approvalRequired` and `m.isApprovalCard`.
+  - When approved, displays verified confirmation: `"Specs approved! Main Coder (Agent 3) resumed."`.
+  - When pending, provides interactive `[Approve & Continue]` and `[Request Changes]` actions.
+  - Verified live endpoint output on `SME Portal` (`4350afd9-49e9-400d-9abe-c7c77546f5d5`): returns User message, Agent 1 checklist, and Pending Approval card.
+
+
+## Step: End-to-End Orchestrator & Next.js Coding Flow Resolution (2026-11-05)
+- **Fixed**:
+  1. Added `fallback_model` and `fallback_provider` to `LLMRequest` in `src/ports/llm_gateway.py` and updated `src/infrastructure/llm/litellm_adapter.py` to normalize Gemini model identifiers (`gemini-3.1-flash-lite`) and failover cleanly on 404/RateLimit errors.
+  2. Updated `config/llm_config.json` with validated live models (`gemini-3.1-flash-lite`, `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`).
+  3. Updated `src/api/routes/workflow.py` and `src/application/orchestration/orchestrator_service.py` to recognize `"Continue"` / `"Approve"` / `"Proceed"` intents when `TECHNICAL_DESIGN.md` exists and route directly to Agent 3 (`MainCodingAgent`), while reporting any background exception directly to the chat UI.
+  4. Updated `src/api/routes/projects.py` (`get_project_messages`) to combine checkpoint history with `MessageORM` interactive messages so prior chat history never disappears.
+- **Verified**:
+  - Triggered `"Continue"` on projects `e03ddf02-9a79-4eee-8835-04e5dc2a8578` and `14aee2b4-150e-472b-9b36-c6d7cd763f8d`.
+  - Verified Agent 3 synthesized and committed the full Next.js TypeScript App Router codebase (`package.json`, `tsconfig.json`, `tailwind.config.js`, `app/layout.tsx`, `app/page.tsx`, `app/api/banksmart/[...path]/route.ts`) and updated `Artifacts` and chat completion messages.
+
+
+## Step: Launch & Live Verification of BCFC SME Portal (Port 5100) and Student LMS Portal (Port 5200) (2026-11-05)
+- **Implemented**:
+  - Configured `next.config.ts` with Turbopack root and `@tailwindcss/turbopack` for both `workspace/14aee2b4-150e-472b-9b36-c6d7cd763f8d/channel-app` and `workspace/e03ddf02-9a79-4eee-8835-04e5dc2a8578/channel-app`.
+  - Launched both Next.js 16.4.3 App Router applications as background daemons on ports `5100` and `5200`.
+- **Verified**:
+  - `GET http://localhost:5100` -> `200 OK` (24,664 bytes HTML)
+  - `GET http://localhost:5100/api/banksmart/facilities?cif=50000248` -> `200 OK`
+  - `GET http://localhost:5200` -> `200 OK` (16,848 bytes HTML)
+  - `GET http://localhost:5200/api/students` -> `200 OK`
+
+
+## Step 1: Agent 4 QA Dynamic Report Formatting & Autonomous Remediation Tracking (2026-11-05)
+- **Implemented**:
+  - Fixed hardcoded `✅` in QA report titles in `src/application/orchestration/orchestrator_service.py` to dynamically show `### ❌ Independent QA Test Report (Attempt X)` when tests fail, and `### ✅ Independent QA Test Report` or `### 🎉 Autonomous QA Remediation SUCCESSFUL (Attempt X)` when tests pass.
+  - Added attempt tracking (`Attempt 1/2`, `Attempt 2/2`) and explicit intermediate notifications in chat when Agent 4 hands defects over to Agent 3 for automated self-healing remediation.
+- **Verified**:
+  - Verified `python -m py_compile src/application/orchestration/orchestrator_service.py` executed with 0 syntax errors.
+  - Restarted platform backend server daemon on port 5000.
+
+
+## Step 2: Inject Live Application URL & Endpoint Probing Context into Agent 4 (2026-11-05)
+- **Implemented**:
+  - Updated `qa_node` in `src/application/orchestration/orchestrator_service.py` to resolve and inject the active service base URL (`http://localhost:5100` for BCFC SME, `http://localhost:5200` for Student LMS, `http://localhost:5001` for .NET, or `http://localhost:8000` for FastAPI).
+  - Passed clear live context to Agent 4 specifying the active service host, registered routes, and HTTP method/payload schema requirements from `docs/XUNIT_TEST_SPEC.md`, preventing false 404 assumptions.
+  - Aligned Student LMS `globals.css` with `@import "tailwindcss";` to ensure 100% Turbopack build compliance.
+- **Verified**:
+  - Live HTTP probing verified with `200 OK` across all endpoints:
+    - `http://localhost:3000` (AAISE Platform): `200 OK`
+    - `http://localhost:5000/api/v1/projects` (Backend API): `200 OK`
+    - `http://localhost:5100` (BCFC SME Portal): `200 OK`
+    - `http://localhost:5100/api/banksmart/facilities?cif=50000248`: `200 OK`
+    - `http://localhost:5200` (Student LMS Portal): `200 OK`
+    - `http://localhost:5200/api/students`: `200 OK`
+
+
+## Step 3: Complete Requirement Ingestion & Full Chat History Restoration (2026-11-05)
+- **Implemented**:
+  - Removed arbitrary 4,000-character truncation (`[:4000]`) in `src/api/routes/projects.py` (`get_project_messages`).
+  - Full attached specifications and requirement documents (e.g. 12,227-character BCFC SME Bank PDF and TDD specs) are now served in their entirety without truncating with `... [Full specification ingested by Agent 1]`.
+  - Added robust sibling project fallback for both initial `user_requirement` and interactive `MessageORM` records, ensuring projects with duplicated or clone IDs (e.g. Student LMS `5359a8a9` / `e03ddf02`) immediately surface the full conversation history.
+  - Restarted platform backend on port 5000 (`task-3228`).
+- **Verified**:
+  - Verified live API endpoint `GET http://localhost:5000/api/v1/projects/14aee2b4-150e-472b-9b36-c6d7cd763f8d/messages`:
+    - Returns all **17 messages** with full 12,227 characters in message 0 (`"This is the requirement document\n\n## Attached Specifications: ### Document: BCFC SME bank Req.pdf ..."`).
+  - Verified live API endpoint `GET http://localhost:5000/api/v1/projects/5359a8a9-2459-4c09-b89e-4cda16eaf953/messages`:
+    - Returns all **11 messages** including initial requirements.
+  - Implemented frontend persistence & full-document viewer in `frontend/app/page.tsx`:
+    - `localStorage` remembers active project on browser refresh.
+    - Added clean scrollable container for complete 12,227-character specification documents with full text accessible.
+    - Added smooth auto-scroll to the bottom of the chat to keep latest agent reports and QA actions visible.
+    - In-browser verification with Playwright confirmed all 17 messages render properly.
+
+
+## Step 4: System-Wide Audit & Workflow Remediation (2026-11-05)
+- **Implemented**:
+  - **Killed Port 5000 Hijacking Process**: Terminated rogue background .NET process `StudentManagementApi` (PID `32544`) that was intercepting port 5000 and returning 404/Connection Reset for `/api/v1/projects`.
+  - **Fixed `create_project` Method Call**: Updated `src/api/routes/projects.py` to call `git_service.initialize_repository` instead of `init_repository`, and added alias `init_repository = initialize_repository` in `GitService`.
+  - **Fixed Subprocess Windows `cp1252` Crash**: Enforced `encoding="utf-8", errors="replace"` in `src/infrastructure/git/git_service.py` (`_run_git`) to prevent `UnicodeDecodeError` when processing commit logs or diffs containing UTF-8 characters.
+  - **Fixed Frontend Unhandled Promise Rejections**: Wrapped `createProject` in `frontend/app/page.tsx` with try/catch to eliminate intrusive full-screen Turbopack error modals.
+  - **Fixed QA Defect Feedback Loop**: Updated `src/infrastructure/orchestration/graph_builder.py` (`route_after_qa`) to support `str(qa_status).startswith("FAILED")`, and updated `orchestrator_service.py` to forward actual black-box QA defect specifications to Agent 3 (`MainCodingAgent`) and auto-resolve them upon successful remediation.
+  - **Expanded Security Scanner**: Added `.tsx` and `.jsx` to `src/application/agents/security_reviewer.py` to audit modern Next.js/React UI components.
+- **Verified**:
+  - All modified files compiled with 0 errors via `py_compile`.
+  - Backend running cleanly on port 5000 (`task-3542`) and Frontend on port 3000 (`task-3407`).
+
+
+
+## Step 5: Comprehensive Project & Agent Code Quality Audit & Fixes (2026-11-06)
+- **Implemented**:
+  - **Agent 1 (Doc Reviewer) Fallback & Spec Depth**: Added `fallback_provider` and `fallback_model` to `LLMRequest` in `src/application/agents/doc_reviewer.py`. Enhanced system prompt to require exhaustive, production-grade Technical Design Documents (`docs/TECHNICAL_DESIGN.md`) and XUnit Test Specifications (`docs/XUNIT_TEST_SPEC.md`) containing full domain models, complete endpoint tables with request/response schemas, validation rules, error handling, and contract test assertions.
+  - **Agent 3 (Main Coder) Framework Generalization**: Removed hardcoded banking/Murabaha personas and tabs from the Next.js system prompt in `src/application/agents/main_coder.py`. Agent 3 now dynamically generates frontend portals strictly tailored to the domain entities and workstations defined in `docs/TECHNICAL_DESIGN.md` (resolving the issue where Student LMS received Murabaha banking tabs).
+  - **Python Syntax Self-Healing Verification**: Added `compileall` syntax validation in `_execute_build_verification` for Python projects in `src/application/agents/main_coder.py`, bringing the same robust compiler self-healing loop that C# (`dotnet build`) enjoys to Python code generation.
+  - **LiteLLM Offline Cost Map Optimization**: Pre-configured `os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"` and disabled telemetry in `src/infrastructure/llm/litellm_adapter.py` to eliminate 15-second network fetch timeouts.
+  - **Active Daemons Refreshed**: Backend running on port 5000 (`task-3861`) and Frontend running on port 3000 (`task-3407`).
+- **Verified**:
+  - `python -m py_compile src/application/agents/main_coder.py src/application/agents/doc_reviewer.py` compiled with 0 errors.
+  - Pytest verified: 13 passed in 6.88s across core domain, base agent, and state persistence modules.
+
+## Step 6: PDF Framework Auto-Detection & Agent 1 Specification Fidelity (2026-11-06)
+- **Identified Root Cause**:
+  - In `src/api/routes/workflow.py`, `detect_target_framework` used an unconstrained substring check `if any(k in lower for k in [..., "ui", ...])`. Because English words like `requirements`, `guidelines`, and `building` contain the substring `ui`, every single uploaded requirements document was falsely classified as `TYPESCRIPT_NEXTJS`.
+  - In `src/application/agents/doc_reviewer.py`, Agent 1's system prompt was instructing it: `Target Architecture Framework: {framework}` and `Align the architecture strictly to the target framework: For TYPESCRIPT_NEXTJS: Specify Next.js App Router API handlers`. This forced Agent 1 to overwrite and ignore the user's explicit PDF requirements (which asked for ASP.NET Core Web API, C#, and SQLite).
+- **Implemented Fix**:
+  - **Regex Word-Boundary Scoring**: Completely replaced naive substring matching in `detect_target_framework` with word-boundary regex patterns (`\basp\.net\b`, `\bc#\b`, `\b\.net\b`, `\bef core\b`). It now accurately calculates matching frequency and identifies the true framework requested in the user's document.
+  - **Agent 1 Stack Compliance Directive**: Updated `get_system_prompt` in `src/application/agents/doc_reviewer.py` to give highest priority to the technology stack explicitly specified in the user's uploaded document/brief. Agent 1 now outputs `"target_framework"` in its JSON response.
+  - **Orchestration Framework Sync**: Added synchronization in `doc_reviewer.py` and `orchestrator_service.py` (`doc_node`) so that when Agent 1 detects or confirms the framework from the document, it updates `ProjectORM.target_framework` and passes it downstream to Agent 3 (Main Coder) and Agent 4 (QA).
+  - **Regenerated Student Management System Specs**: Reran Agent 1 on project `Test AI Workshop` (`93b88f98-7b05-4e67-8bad-b247e92af64c`). It successfully produced a full **ASP.NET Core Web API (.NET 8), C#, SQLite, Entity Framework Core, Controller-Service-Repository, and XUnit Integration Test Specification**, exactly matching the user's PDF.
+  - **Robust Backend Runner**: Added `run_backend.py` with `SO_REUSEADDR` to prevent Windows `Errno 10048` TIME_WAIT socket locks on port 5000.
