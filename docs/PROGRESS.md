@@ -575,3 +575,129 @@ Progress is tracked strictly through verifiable architectural milestones, not ar
   - **Orchestration Framework Sync**: Added synchronization in `doc_reviewer.py` and `orchestrator_service.py` (`doc_node`) so that when Agent 1 detects or confirms the framework from the document, it updates `ProjectORM.target_framework` and passes it downstream to Agent 3 (Main Coder) and Agent 4 (QA).
   - **Regenerated Student Management System Specs**: Reran Agent 1 on project `Test AI Workshop` (`93b88f98-7b05-4e67-8bad-b247e92af64c`). It successfully produced a full **ASP.NET Core Web API (.NET 8), C#, SQLite, Entity Framework Core, Controller-Service-Repository, and XUnit Integration Test Specification**, exactly matching the user's PDF.
   - **Robust Backend Runner**: Added `run_backend.py` with `SO_REUSEADDR` to prevent Windows `Errno 10048` TIME_WAIT socket locks on port 5000.
+
+## Step 7: Elimination of Duplicate Human Approval Cards (2026-11-06)
+- **Identified Root Cause**:
+  1. **Dual Render in Frontend Component (`frontend/app/page.tsx`)**: In the message renderer, when `(m.approvalRequired || m.isApprovalCard)` was true, the UI rendered both the normal slate agent bubble (`<div className="bg-[#121624] ...">`) with text `"Human approval required to proceed with code implementation."` AND the orange approval card (`<div className="bg-[#181308] ...">`) immediately underneath it inside the same container.
+  2. **Synthetic Message Collision in Backend (`src/api/routes/projects.py`)**: `get_project_messages` synthesized fallback approval cards from `HumanApprovalORM` (`approval-{app.id}`) and prepended them, then appended `db_messages` which already contained the real persisted approval message (`MessageORM`), causing the approval card to appear twice in the chat timeline.
+  3. **SSE Redundant Append (`frontend/app/page.tsx`)**: The SSE `approval_requested` listener appended new approval cards without deduplicating against existing pending approval messages.
+- **Implemented Fix**:
+  - **Backend Message Deduplication (`src/api/routes/projects.py`)**: Updated `get_project_messages` to prioritize canonical `db_messages` from `MessageORM`. Synthetic fallback messages (`user-init`, `agent1-spec`, `approval-{app.id}`) are now strictly generated only for legacy projects lacking message history. Deduplication ensures at most one approval card is ever returned per gate.
+  - **Frontend UI Suppression (`frontend/app/page.tsx`)**: Wrapped the slate text container with `!(m.approvalRequired || m.isApprovalCard) && (...)` so that approval messages render only once as the clean, styled orange card with the action buttons.
+  - **SSE Deduplication Guard (`frontend/app/page.tsx`)**: Updated the `approval_requested` SSE handler to check if an approval item is already in state before appending.
+  - **Socket & Daemon Cleanliness (`run_backend.py`)**: Terminated lingering background python instances on port 5000 and restarted the backend service cleanly.
+- **Verified**:
+  - `npx tsc --noEmit` in `frontend/` completed with 0 errors.
+  - Live HTTP verification via `GET /api/v1/projects/{id}/messages` confirmed exactly 4 clean chronological messages and exactly 1 approval card.
+
+## Step 8: Implementation of Human Approval "Request Changes" Feedback Loop (2026-11-06)
+- **Identified Root Cause**:
+  1. **Unimplemented Feedback Handler in Backend (`src/api/routes/workflow.py`)**: `resolve_approval_endpoint` only had logic for `if req.approved:`. When `req.approved` was `False` (user clicks "Request Changes" and submits feedback), the endpoint marked the approval rejected in the DB and returned immediately without triggering `_run_orchestrator_job`. As a result, Agent 1 was never invoked to revise the Technical Design Document or Test Specifications.
+  2. **Approval Bypass Assumption (`src/application/orchestration/orchestrator_service.py`)**: In `start_workflow`, any project that had a prior approval in history was flagged as `is_spec_approved = True`, causing the orchestrator to bypass Agent 1 and assume the specifications were already finalized.
+  3. **Duplicate Status Display in UI (`frontend/app/page.tsx`)**: Lines 2038-2046 rendered a second duplicate `"Specs approved! Main Coder (Agent 3) resumed."` block right below line 1938 when `specApproved` was true.
+- **Implemented Fix**:
+  - **Backend Revision Pipeline (`src/api/routes/workflow.py`)**: Added full `else:` branch in `resolve_approval_endpoint`. When changes are requested, it updates the workflow run phase to `SPECIFICATION`, logs the reviewer's feedback message in `MessageORM`, outputs Agent 1's revision acknowledgment, and launches `_run_orchestrator_job` with the revision instructions in the background.
+  - **Orchestrator Revision Recognition (`src/application/orchestration/orchestrator_service.py`)**: Added `is_revision_intent` detection. When revision keywords ("revise", "requested changes", etc.) are present, `is_spec_approved` is forced to `False`, `spec_approval_comments` is populated in `WorkflowState`, and Agent 1 takes existing specs from disk and incorporates the requested revisions.
+  - **Interactive Chat UX (`frontend/app/page.tsx`)**: In `handleRequestChanges`, immediately appends the user's requested changes message to the chat and shows Agent 1's revising status. Updated the approval card to display `"Revisions requested. Agent 1 is updating the specifications..."` and removed the duplicate approval message.
+- **Verified**:
+  - `cd frontend; npx tsc --noEmit` verified 0 errors.
+  - Live backend health checked on `http://localhost:5000/api/v1/health` (Status 200).
+
+## Step 9: Reconfiguration of Ports (Frontend 8080 & Backend 8081) (2026-11-06)
+- **Port Allocation**:
+  - **Frontend (Next.js)**: Port `8080` (accessible at `http://localhost:8080`).
+  - **Backend (FastAPI)**: Port `8081` (accessible at `http://localhost:8081`).
+- **Configuration Updates**:
+  - `run_backend.py`: Set to bind to `0.0.0.0:8081`.
+  - `src/infrastructure/config.py`: Added `http://localhost:8080` and `http://127.0.0.1:8080` to `CORS_ALLOWED_ORIGINS`.
+  - `frontend/lib/api.ts`: Updated `API_BASE` fallback to `http://localhost:8081`.
+  - `frontend/.env.local`: Configured `NEXT_PUBLIC_API_URL=http://localhost:8081`.
+  - `frontend/next.config.ts`: Updated rewrite proxy destination to `http://localhost:8081/api/v1/:path*`.
+  - `frontend/package.json`: Updated `dev` script to `next dev -p 8080`.
+- **Verification**:
+  - Terminated legacy processes on ports 3000 and 5000.
+  - Backend running cleanly on port 8081 (`GET /api/v1/health` -> HTTP 200).
+  - Frontend running cleanly on port 8080 (`GET /` -> HTTP 200).
+  - Reverse proxy verified (`GET http://localhost:8080/api/v1/health` -> HTTP 200 via 8081).
+
+## Step 10: Fix Infinite Re-route Loop at Approval Gate & Preserve Revision Cards (2026-11-06)
+- **Identified Root Causes**:
+  1. **GraphBuilder Infinite Edge Loop (`src/infrastructure/orchestration/graph_builder.py`)**: `route_after_spec_approval` had a legacy condition: `if comments: return "doc_reviewer"`. Because `doc_reviewer` immediately transitions to `spec_approval_gate`, this conditional edge was immediately re-triggering `doc_reviewer` in a zero-delay loop forever, creating 80+ duplicate messages and keeping the server completely pegged.
+  2. **Approval Card Dropping in `get_project_messages` (`src/api/routes/projects.py`)**: A single boolean `seen_approval` was discarding all approval cards after the first one, meaning when an iterative revision generated a new pending approval card, it was omitted from the timeline while the older rejected one remained stuck.
+  3. **Failed to Fetch Error Modal (`frontend/lib/api.ts`)**: Server starvation during the infinite loop caused pending HTTP requests to fail, which surfaced unhandled in Next.js development overlays.
+- **Implemented Fix**:
+  - **Halted Re-route Loop**: Simplified `route_after_spec_approval` in `graph_builder.py` so that if `spec_approved` is `False`, the graph always returns `END` to pause and wait for the user to approve or request changes.
+  - **Multi-Approval History Preservation (`projects.py`)**: Replaced the boolean deduplication with `seen_approval_ids = set()`, allowing the chat timeline to cleanly show historical resolved gates (marked as `REJECTED`) and the current active gate (`PENDING`).
+  - **Database Spam Purge**: Deleted the 83 duplicate messages generated by the infinite loop on project `5d10ed25-1a14-419e-b2db-2561e3414475`.
+  - **Server Refresh**: Backend running smoothly on port 8081 (`task-4622`) and Frontend on port 8080 (`task-4554`).
+- **Verification**:
+  - `GET http://localhost:8080/api/v1/projects/5d10ed25-1a14-419e-b2db-2561e3414475/messages` confirmed exactly 8 clean messages: initial spec, rejected card, revision request, revised spec, and the active pending approval card with action buttons.
+
+### [2026-11-06] Two-Pass Markdown Generation & Revision Loop Enhancement (Completed)
+- Rewrote src/application/agents/doc_reviewer.py to use a two-pass pure Markdown architecture:
+  - Pass 1: Generates exhaustive docs/TECHNICAL_DESIGN.md in pure Markdown adhering to requested framework and architecture contracts.
+  - Pass 2: Generates exhaustive docs/XUNIT_TEST_SPEC.md individually detailing all 26 test cases (UT-01..12 and IT-01..14) with preconditions, input payloads, execution steps, and exact assertions without placeholder templates.
+- Fixed revision loop bypassing bug in src/application/orchestration/orchestrator_service.py: Evaluates the latest human approval status to ensure revision requests never get bypassed when earlier approvals existed.
+- Updated rontend/app/page.tsx approval card rendering so each approval card accurately reflects its specific approval status without global boolean bleed-through.
+- Migrated default platform ports: Frontend on port 8080, Backend on port 8081.
+
+### [2026-11-06] Sibling Project Message Bleed Bug Fix (Completed)
+- Identified and removed unintended sibling message fallback logic in src/api/routes/projects.py:
+  - Previously, when a new project had empty messages, it checked sibling projects for substring name matches (e.g. 'testing' in 'Agent Loop Testing') and copied the older project's messages and state.
+  - Removed this fallback completely so new projects always start with a clean, empty message thread.
+
+### [2026-11-06] Step 1: Main Coding Agent Build Gate & Cleanup (Completed)
+- Modified src/application/agents/main_coder.py:
+  - Removed hardcoded 'Job' few-shot examples from C# system prompt to eliminate accidental leakage into non-Job projects.
+  - Added mandatory Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore package to C# project scaffolding.
+  - Implemented orphan/stray file cleanup before build verification.
+- Verified syntax via python -m py_compile.
+
+### [2026-11-06] Step 2: Orchestrator Honest Status Reporting (Completed)
+- Modified src/application/orchestration/orchestrator_service.py:
+  - Removed hardcoded 'built with 0 errors' chat notification in code_node.
+  - Added dynamic verification check: when uild_success is False, logs exact compiler errors from dotnet build into the chat and marks checklist as FAILED.
+  - Updated 
+elease_node to check genuine build and QA outcomes, marking workflow status as FAILED with honest error summaries if compiler or contract defects exist.
+- Verified syntax via python -m py_compile.
+
+
+### [2026-11-10] Step 3: Switch All Agents to Gemini Flash Family & Optimize Fallback Handling (Completed)
+- **Identified Root Cause of Groq RateLimitError**:
+  - Groq free tier enforces a strict 8,000 TPM limit on `openai/gpt-oss-120b`. Large SRS document inputs (9,238 tokens) mathematically exceeded the limit (`Requested 9238 > Limit 8000`), crashing the workflow during code generation.
+  - Furthermore, `src/infrastructure/llm/litellm_adapter.py` had a forced model remapping that translated `gemini-3.8-flash` into `gemini-3.1-flash-lite`, which returned 503 Service Unavailable during demand spikes, triggering an unviable fallback to Groq.
+- **Implemented Fixes**:
+  - `src/infrastructure/llm/litellm_adapter.py`:
+    - Removed the hardcoded forced rewrite of Gemini Flash models, allowing direct pass-through of `gemini-3.8-flash` and `gemini-3.5-flash`.
+    - Updated `RateLimitError` handling to immediately abort pointless retry loops and trigger fallback when the error indicates prompt size exceeds TPM quota (`Requested > Limit`).
+    - Added safe fallback default `content = getattr(message, "content", None) or ""` to prevent `AttributeError`.
+  - `config/llm_config.json`:
+    - Switched all 5 agents (`AGENT_1` through `AGENT_5`) to the Gemini Flash family (`provider: "gemini"`).
+    - Configured primary model `gemini-3.8-flash` and fallback model `gemini-3.5-flash` with a 4,000,000 TPM quota.
+- **Verification**:
+  - Verified live LLM generation with `LiteLLMAdapter` returning `GEMINI_AAISE_ONLINE` with 0 errors.
+  - Restarted platform servers: Backend live on port 8081 (`HTTP 200 /docs`), Frontend live on port 8080 (`HTTP 200`).
+
+### [2026-11-10] Step 4: Make Agent 1 (Doc Reviewer) Fully Dynamic & SRS-Driven (Completed)
+- **Root Cause Eliminated**:
+  - Found hardcoded Student Registration domain references (`POST /api/students`, `student:create`, `email`, `department`) and a hardcoded list of 26 tests (`UT-01..12` and `IT-01..14`) in `src/application/agents/doc_reviewer.py` prompts, which caused context contamination when generating documents for new projects (such as Calculation API).
+- **Changes Implemented**:
+  - `src/application/agents/doc_reviewer.py`:
+    - Updated Pass 1 (`prompt_tdd`) to treat the user's uploaded SRS as the strict, absolute single source of truth for all entities, endpoints, database schemas, and status codes.
+    - Updated Pass 2 (`prompt_test`) to dynamically extract the exact test identifiers (e.g. `UT-01..07`, `IT-01..12`) and functional assertions directly from the provided SRS, eliminating hardcoded test lists.
+  - `src/application/agents/main_coder.py`:
+    - Generalised residual file cleanup to operate across any non-Jobs project framework.
+- **Verification**:
+  - `python -m py_compile` passed with zero errors.
+  - `git grep -i "student" src/application/agents/doc_reviewer.py` returned 0 matches.
+  - Backend (`http://localhost:8081/docs`) and Frontend (`http://localhost:8080`) verified running live (HTTP 200).
+
+### [2026-11-10] Step 5: Update Gemini API Key & Switch to Active Gemini-3-Flash Models (Completed)
+- **Problem**:
+  - Google Cloud Free Tier daily limit (20 requests/day) reached on `gemini-3.8-flash`/`gemini-3.6-flash`.
+- **Changes Implemented**:
+  - `.env`: Updated `GEMINI_API_KEY` with the user-provided new key.
+  - `config/llm_config.json`: Switched all 5 agents to use active models with remaining daily quota (`primary: gemini-3-flash-preview`, `fallback: gemini-3.5-flash-lite`).
+- **Verification**:
+  - Tested live generation with `LiteLLMAdapter` returning `GEMINI_NEW_KEY_ONLINE` (Exit Code: 0).
+  - Restarted backend on port 8081 (`HTTP 200 /docs`). Frontend confirmed running on port 8080 (`HTTP 200`).

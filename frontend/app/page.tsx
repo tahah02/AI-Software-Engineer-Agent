@@ -425,25 +425,32 @@ export default function WorkspacePage() {
 
           setActiveApprovalId(eventData.approval_id as string);
 
-          setMessages((prev) => [
-
-            ...prev,
-
-            {
-
-              id: `approval-${Date.now()}`,
-
-              sender: "agent1",
-
-              senderName: "Agent 1: Documentation Reviewer",
-
-              timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-
-              approvalRequired: true,
-
-            },
-
-          ]);
+          setMessages((prev) => {
+            const hasApproval = prev.some(
+              (m) => m.approvalRequired || m.isApprovalCard || (eventData.approval_id && m.approvalId === eventData.approval_id)
+            );
+            if (hasApproval) {
+              return prev.map((m) =>
+                m.approvalRequired || m.isApprovalCard
+                  ? { ...m, approvalId: (eventData.approval_id as string) || m.approvalId, status: "PENDING", isApproved: false }
+                  : m
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: `approval-${eventData.approval_id || Date.now()}`,
+                sender: "agent1",
+                senderName: "Agent 1: Documentation Reviewer",
+                timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+                approvalRequired: true,
+                isApprovalCard: true,
+                approvalId: eventData.approval_id as string,
+                status: "PENDING",
+                isApproved: false,
+              },
+            ];
+          });
 
           // Refresh real artifacts
 
@@ -720,23 +727,18 @@ export default function WorkspacePage() {
 
 
     setMessages((prev) => [
-
-      ...prev,
-
+      ...prev.map((msg) =>
+        (msg.approvalRequired || msg.isApprovalCard) && (!targetApprovalId || msg.approvalId === targetApprovalId)
+          ? { ...msg, status: "APPROVED", isApproved: true }
+          : msg
+      ),
       {
-
         id: `sys-approve-${Date.now()}`,
-
         sender: "assistant",
-
         senderName: "AAISE Orchestrator",
-
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-
         text: "Specifications approved. Resuming Main Coding Agent (Agent 3)...",
-
       },
-
     ]);
 
   };
@@ -749,17 +751,47 @@ export default function WorkspacePage() {
 
     setSpecApproved(false);
 
-    if (activeApprovalId) {
+    const feedback = feedbackInput.trim() || "Please revise specifications according to requested changes.";
+
+    const targetApprovalId = activeApprovalId;
+
+    // Immediately show revision message in chat
+    setMessages((prev) => [
+      ...prev.map((m) => (m.approvalRequired || m.isApprovalCard) && (!targetApprovalId || m.approvalId === targetApprovalId)
+        ? { ...m, status: "REJECTED", isApproved: false }
+        : m
+      ),
+      {
+        id: `user-rev-${Date.now()}`,
+        sender: "user",
+        senderName: "You",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        text: `Requested Changes to Specifications:\n${feedback}`,
+      },
+      {
+        id: `agent1-rev-${Date.now() + 1}`,
+        sender: "agent1",
+        senderName: "Agent 1: Documentation Reviewer",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        text: "Analyzing requested changes. Revising Technical Design Document (TDD) and Test Specifications...",
+      },
+    ]);
+
+    setShowFeedbackModal(false);
+
+    setFeedbackInput("");
+
+    if (targetApprovalId) {
 
       try {
 
         await resolveApproval({
 
-          approval_id: activeApprovalId,
+          approval_id: targetApprovalId,
 
           approved: false,
 
-          comments: feedbackInput || "Requesting specifications revision.",
+          comments: feedback,
 
         });
 
@@ -770,10 +802,6 @@ export default function WorkspacePage() {
       }
 
     }
-
-    setShowFeedbackModal(false);
-
-    setFeedbackInput("");
 
   };
 
@@ -1809,7 +1837,8 @@ export default function WorkspacePage() {
 
                     <div className="flex-1 space-y-3 max-w-2xl">
 
-                      <div className="bg-[#121624] border border-slate-800 rounded-xl p-3.5 shadow-sm">
+                      {!(m.approvalRequired || m.isApprovalCard) && (
+                        <div className="bg-[#121624] border border-slate-800 rounded-xl p-3.5 shadow-sm">
 
                         <div className="flex items-center justify-between mb-1.5">
 
@@ -1887,6 +1916,7 @@ export default function WorkspacePage() {
                         )}
 
                       </div>
+                      )}
 
 
 
@@ -1922,7 +1952,15 @@ export default function WorkspacePage() {
 
 
 
-                          {m.isApproved || m.status === "APPROVED" || specApproved ? (
+                          {m.status === "REJECTED" ? (
+
+                            <div className="flex items-center gap-2 text-amber-400 text-[12px] font-medium ml-8">
+
+                              <RotateCcw className="h-4 w-4" /> Revisions requested. Agent 1 is updating the specifications...
+
+                            </div>
+
+                          ) : m.isApproved || m.status === "APPROVED" ? (
 
                             <div className="flex items-center gap-2 text-emerald-400 text-[12px] font-medium ml-8">
 
@@ -2019,28 +2057,6 @@ export default function WorkspacePage() {
                                 </button>
 
                               </div>
-
-                            </div>
-
-                          )}
-
-
-
-                          {specApproved === true && (
-
-                            <div className="mt-3 ml-8 text-[11px] text-emerald-400 flex items-center gap-1.5">
-
-                              <CheckCircle2 className="h-3 w-3" /> Specs approved! Main Coder (Agent 3) resumed.
-
-                            </div>
-
-                          )}
-
-                          {specApproved === false && (
-
-                            <div className="mt-3 ml-8 text-[11px] text-amber-400 flex items-center gap-1.5">
-
-                              <AlertTriangle className="h-3 w-3" /> Revision requested. Looping back to Agent 1.
 
                             </div>
 

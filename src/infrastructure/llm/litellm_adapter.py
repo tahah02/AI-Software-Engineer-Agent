@@ -59,13 +59,6 @@ class LiteLLMAdapter(ILLMGateway):
         prefix = f"{provider.value}/"
         if clean_model.startswith(prefix):
             clean_model = clean_model[len(prefix):]
-        if provider == LLMProvider.GEMINI and clean_model in (
-            "gemini-3.5-flash-lite",
-            "gemini-3.5-flash",
-            "gemini-3.8-flash",
-            "gemini-2.5-flash",
-        ):
-            clean_model = "gemini-3.1-flash-lite"
         return f"{prefix}{clean_model}"
 
     def _redact_secrets(self, text: str) -> str:
@@ -161,7 +154,7 @@ class LiteLLMAdapter(ILLMGateway):
 
                 choice = response.choices[0]
                 message = choice.message
-                content = getattr(message, "content", None)
+                content = getattr(message, "content", None) or ""
                 finish_reason_raw = getattr(choice, "finish_reason", "stop") or "stop"
 
                 # Parse tool calls
@@ -235,6 +228,9 @@ class LiteLLMAdapter(ILLMGateway):
                     model=model_name,
                     message=f"Rate limit exceeded (attempt {attempts}/{max_attempts}): {clean_msg}",
                 )
+                # If prompt exceeds model's TPM quota, immediate failover to fallback without retrying
+                if "too large" in clean_msg.lower() or "limit" in clean_msg.lower() and "requested" in clean_msg.lower():
+                    break
                 if attempts < max_attempts:
                     await asyncio.sleep(1.0 * attempts)
                     continue

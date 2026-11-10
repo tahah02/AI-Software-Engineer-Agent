@@ -133,7 +133,7 @@ class OrchestratorService:
 
             raise ValueError(f"Project {project_id} not found.")
 
-        prior_spec_approval = (
+        latest_spec_approval = (
 
             self.db.query(HumanApprovalORM)
 
@@ -145,9 +145,9 @@ class OrchestratorService:
 
                 HumanApprovalORM.gate_type == "SPECIFICATION",
 
-                HumanApprovalORM.status == "APPROVED",
-
             )
+
+            .order_by(HumanApprovalORM.requested_at.desc())
 
             .first()
 
@@ -155,21 +155,29 @@ class OrchestratorService:
 
         cleaned_req = user_requirement.strip().lower().rstrip("!.,?")
 
+        is_revision_intent = any(w in cleaned_req for w in [
+            "revise", "revision", "requested changes", "change request", "modifications",
+            "update spec", "change database", "change the", "badal", "tabdeeli", "theek karo",
+            "sahi karo", "change karo", "revising", "please revise"
+        ])
+
         is_approved_intent = (
-
-            cleaned_req in {"continue", "approve", "approved", "proceed", "yes", "ok", "okay", "go ahead", "start coding", "write code", "code", "build", "build it", "chalo", "kro", "kardo"}
-
-            or any(w in cleaned_req for w in ["approved", "proceed with full application", "continue", "start coding", "write code", "agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"])
-
+            not is_revision_intent and (
+                cleaned_req in {"continue", "approve", "approved", "proceed", "yes", "ok", "okay", "go ahead", "start coding", "write code", "code", "build", "build it", "chalo", "kro", "kardo"}
+                or any(w in cleaned_req for w in ["approved", "proceed with full application", "continue", "start coding", "write code", "agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"])
+            )
         )
 
-        is_qa_or_sec_only = any(w in cleaned_req for w in ["agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"]
-
-        )
+        is_qa_or_sec_only = any(w in cleaned_req for w in ["agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"])
 
         tdd_check = Path(self.git_service.base_workspace_dir) / str(project_id) / "docs" / "TECHNICAL_DESIGN.md"
 
-        is_spec_approved = (prior_spec_approval is not None) or (is_approved_intent and tdd_check.exists())
+        if is_revision_intent:
+            is_spec_approved = False
+        elif latest_spec_approval and latest_spec_approval.status == "REJECTED":
+            is_spec_approved = False
+        else:
+            is_spec_approved = (latest_spec_approval is not None and latest_spec_approval.status == "APPROVED") or (is_approved_intent and tdd_check.exists())
 
         run = None
 
@@ -272,6 +280,8 @@ class OrchestratorService:
             "defect_remediation_count": 0,
 
             "spec_approved": is_spec_approved,
+
+            "spec_approval_comments": user_requirement if is_revision_intent else None,
 
             "release_approved": True,
 
@@ -533,6 +543,28 @@ class OrchestratorService:
 
             s["current_phase"] = "DEVELOPMENT"
 
+            build_log = res.metadata.get("build_log", "")
+            if s["build_success"]:
+                agent3_msg = "Channel application code synthesized, built with 0 errors, and committed to repository."
+                checklist = [
+                    "Synthesized multi-file Clean Architecture structure",
+                    "Generated project configuration",
+                    "Verified build and dependency installation (0 errors)",
+                ]
+            else:
+                err_lines = [l.strip() for l in build_log.splitlines() if "error CS" in l or "Error(s)" in l or "FAILED" in l or "error:" in l]
+                err_summary = "\n".join(err_lines[:6]) if err_lines else "Compiler errors detected during build verification."
+                agent3_msg = (
+                    f"⚠️ Channel application code synthesized, but build compilation failed:\n\n"
+                    f"```\n{err_summary}\n```\n\n"
+                    f"Committed code to repository for inspection and defect resolution."
+                )
+                checklist = [
+                    "Synthesized multi-file Clean Architecture structure",
+                    "Generated project configuration",
+                    "Build verification: FAILED (compiler errors detected)",
+                ]
+
             save_chat_message(
 
                 self.db,
@@ -541,21 +573,9 @@ class OrchestratorService:
 
                 "agent3",
 
-                "Channel application code synthesized, built with 0 errors, and committed to repository.",
+                agent3_msg,
 
-                metadata={
-
-                    "checklist": [
-
-                        "Synthesized multi-file Clean Architecture structure",
-
-                        "Generated project configuration",
-
-                        "Verified build and dependency installation",
-
-                    ]
-
-                },
+                metadata={"checklist": checklist},
 
             )
 
@@ -710,6 +730,16 @@ class OrchestratorService:
 
             run.current_phase = "COMPLETED"
 
+            if not s.get("build_success", True):
+                run.status = "FAILED"
+                release_msg = "⚠️ Project workflow completed with build failures. Review compiler errors and inspect channel-app codebase."
+            elif str(s.get("qa_status", "")).startswith("FAILED"):
+                run.status = "FAILED"
+                release_msg = f"⚠️ Project workflow completed with {s.get('qa_failed_count', 0)} unresolved QA defect(s). Code is committed to channel-app for remediation."
+            else:
+                run.status = "COMPLETED"
+                release_msg = "Project built and verified successfully. Code is ready in channel-app repository."
+
             save_chat_message(
 
                 self.db,
@@ -718,7 +748,7 @@ class OrchestratorService:
 
                 "assistant",
 
-                "Project built and verified successfully. Code is ready in channel-app repository.",
+                release_msg,
 
             )
 

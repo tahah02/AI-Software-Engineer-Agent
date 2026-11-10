@@ -517,163 +517,10 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
                 pass
 
     init_time_str = first_run.created_at.strftime("%H:%M") if first_run.created_at else "12:00"
-
     time_str = latest_run.created_at.strftime("%H:%M") if latest_run.created_at else "12:00"
 
-    if (not user_req or user_req.strip() in generic_ack_phrases) and specs_on_disk:
-
-        try:
-
-            tdd_content = tdd_file.read_text(encoding="utf-8")
-
-            user_req = (
-
-                f"Build and implement {project.name} ({project.target_framework}) according to the attached specification document.\n\n"
-
-                f"## Attached Requirements & Architectural Specification:\n\n{tdd_content}"
-
-            )
-
-        except Exception:
-
-            user_req = f"Software requirements and architectural design for {project.name} ({project.target_framework})."
-
-    if not user_req or user_req.strip() in generic_ack_phrases:
-        clean_proj_name = project.name.strip().lower()
-        siblings = db.query(ProjectORM).filter(ProjectORM.id != project.id).all()
-        for sib in siblings:
-            sib_clean = sib.name.strip().lower()
-            if sib_clean == clean_proj_name or clean_proj_name in sib_clean or sib_clean in clean_proj_name:
-                sib_runs = db.query(WorkflowRunORM).filter_by(project_id=sib.id).all()
-                sib_run_ids = [r.id for r in sib_runs]
-                sib_cps = (
-                    db.query(WorkflowCheckpointORM)
-                    .filter(WorkflowCheckpointORM.workflow_run_id.in_(sib_run_ids))
-                    .order_by(WorkflowCheckpointORM.created_at.asc())
-                    .all()
-                )
-                for cp in sib_cps:
-                    try:
-                        st = json.loads(cp.state_data)
-                        req_val = (st.get("user_requirement") or "").strip()
-                        if req_val and req_val not in generic_ack_phrases and len(req_val) > 30:
-                            user_req = req_val
-                            break
-                    except Exception:
-                        pass
-                if user_req and user_req not in generic_ack_phrases:
-                    break
-
-    if user_req:
-        display_text = user_req
-        messages.append({
-
-            "id": f"user-init-{first_run.id}",
-
-            "sender": "user",
-
-            "senderName": "You",
-
-            "timestamp": init_time_str,
-
-            "text": display_text,
-
-        })
-
-    has_spec = any("SPECIFICATION" in cp.checkpoint_key for cp in checkpoints) or specs_on_disk
-
-    if has_spec:
-
-        messages.append({
-
-            "id": f"agent1-spec-{latest_run.id}",
-
-            "sender": "agent1",
-
-            "senderName": "Agent 1 (Requirements & Design)",
-
-            "timestamp": time_str,
-
-            "text": "I have analyzed your software requirements and generated technical specifications.",
-
-            "checklist": [
-
-                "Analyzed architecture boundaries & target framework",
-
-                "Extracted functional requirements & API contracts",
-
-                "Created test specifications",
-
-                "Generated Technical Design Document (TDD)",
-
-            ],
-
-        })
-
-    approvals = (
-
-        db.query(HumanApprovalORM)
-
-        .filter_by(workflow_run_id=latest_run.id)
-
-        .order_by(HumanApprovalORM.requested_at.asc())
-
-        .all()
-
-    )
-
-    if has_spec and not approvals:
-
-        engine = ApprovalEngine(db=db)
-
-        app = engine.create_approval_request(
-
-            workflow_run_id=latest_run.id,
-
-            gate_type="SPECIFICATION",
-
-            prompt_text="Please review the technical design and test specifications. Shall I proceed with implementation?",
-
-        )
-
-        db.commit()
-
-        approvals = [app]
-
-    for app in approvals:
-
-        is_app_approved = (app.status == "APPROVED")
-
-        messages.append({
-
-            "id": f"approval-{app.id}",
-
-            "sender": "agent1",
-
-            "senderName": "Agent 1: Documentation Reviewer",
-
-            "timestamp": time_str,
-
-            "text": "Human approval required to proceed with code implementation.",
-
-            "isApprovalCard": True,
-
-            "approvalRequired": True,
-
-            "approvalId": str(app.id),
-
-            "gateType": app.gate_type,
-
-            "status": app.status,
-
-            "isApproved": is_app_approved,
-
-        })
-
-    # Append real interactive messages from MessageORM
-
+    # Query real interactive messages from MessageORM first
     conv = db.query(ConversationORM).filter_by(project_id=project_id).first()
-
     db_messages = []
     if conv:
         db_messages = (
@@ -682,79 +529,133 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
             .order_by(MessageORM.created_at.asc())
             .all()
         )
-    if not db_messages:
-        clean_proj_name = project.name.strip().lower()
-        siblings = db.query(ProjectORM).filter(ProjectORM.id != project.id).all()
-        for sib in siblings:
-            sib_clean = sib.name.strip().lower()
-            if sib_clean == clean_proj_name or clean_proj_name in sib_clean or sib_clean in clean_proj_name:
-                sib_conv = db.query(ConversationORM).filter_by(project_id=sib.id).first()
-                if sib_conv:
-                    c_msgs = db.query(MessageORM).filter_by(conversation_id=sib_conv.id).order_by(MessageORM.created_at.asc()).all()
-                    if c_msgs:
-                        db_messages = c_msgs
-                        break
 
-    existing_texts = {m.get("text", "").strip() for m in messages}
 
-    for m in db_messages:
+    approvals = (
+        db.query(HumanApprovalORM)
+        .filter_by(workflow_run_id=latest_run.id)
+        .order_by(HumanApprovalORM.requested_at.asc())
+        .all()
+    )
 
-            if m.content.strip() in existing_texts and m.sender_type == "user":
+    messages = []
+    sender_names = {
+        "user": "You",
+        "agent1": "Agent 1: Documentation Reviewer",
+        "agent2": "Agent 2: Mock API Developer",
+        "agent3": "Agent 3: Main Coding Agent",
+        "agent4": "Agent 4: Independent QA",
+        "agent5": "Agent 5: Security Reviewer",
+        "assistant": "AAISE Platform",
+    }
 
-                continue
+    app_map = {str(a.id): a.status for a in approvals}
 
-            sender_name = "You"
-
-            if m.sender_type == "agent1":
-
-                sender_name = "Agent 1: Documentation Reviewer"
-
-            elif m.sender_type == "agent2":
-
-                sender_name = "Agent 2: Mock API Developer"
-
-            elif m.sender_type == "agent3":
-
-                sender_name = "Agent 3: Main Coding Agent"
-
-            elif m.sender_type == "agent4":
-
-                sender_name = "Agent 4: Independent QA"
-
-            elif m.sender_type == "agent5":
-
-                sender_name = "Agent 5: Security Reviewer"
-
-            elif m.sender_type == "assistant":
-
-                sender_name = "AAISE Platform"
-
+    if db_messages:
+        seen_approval_ids = set()
+        for m in db_messages:
             meta = {}
-
             if m.metadata_json:
-
                 try:
-
                     meta = json.loads(m.metadata_json)
-
                 except Exception:
-
                     pass
 
+            app_id = meta.get("approvalId")
+            if app_id:
+                if app_id in seen_approval_ids:
+                    continue
+                seen_approval_ids.add(app_id)
+                if app_id in app_map:
+                    meta["status"] = app_map[app_id]
+                    meta["isApproved"] = (meta["status"] == "APPROVED")
+
             messages.append({
-
                 "id": str(m.id),
-
                 "sender": m.sender_type,
-
-                "senderName": sender_name,
-
+                "senderName": sender_names.get(m.sender_type, "AAISE Platform"),
                 "timestamp": m.created_at.strftime("%H:%M") if m.created_at else time_str,
-
                 "text": m.content,
-
                 **meta,
+            })
 
+        pending_apps = [a for a in approvals if str(a.id) not in seen_approval_ids and a.status == "PENDING"]
+        if pending_apps:
+            latest_app = pending_apps[-1]
+            messages.append({
+                "id": f"approval-{latest_app.id}",
+                "sender": "agent1",
+                "senderName": "Agent 1: Documentation Reviewer",
+                "timestamp": time_str,
+                "text": "Human approval required to proceed with code implementation.",
+                "isApprovalCard": True,
+                "approvalRequired": True,
+                "approvalId": str(latest_app.id),
+                "gateType": latest_app.gate_type,
+                "status": latest_app.status,
+                "isApproved": (latest_app.status == "APPROVED"),
+            })
+    else:
+        # Fallback synthetic messages for legacy runs without MessageORM records
+        if (not user_req or user_req.strip() in generic_ack_phrases) and specs_on_disk:
+            try:
+                tdd_content = tdd_file.read_text(encoding="utf-8")
+                user_req = (
+                    f"Build and implement {project.name} ({project.target_framework}) according to the attached specification document.\n\n"
+                    f"## Attached Requirements & Architectural Specification:\n\n{tdd_content}"
+                )
+            except Exception:
+                user_req = f"Software requirements and architectural design for {project.name} ({project.target_framework})."
+
+        if user_req:
+            messages.append({
+                "id": f"user-init-{first_run.id}",
+                "sender": "user",
+                "senderName": "You",
+                "timestamp": init_time_str,
+                "text": user_req,
+            })
+
+        has_spec = any("SPECIFICATION" in cp.checkpoint_key for cp in checkpoints) or specs_on_disk
+        if has_spec:
+            messages.append({
+                "id": f"agent1-spec-{latest_run.id}",
+                "sender": "agent1",
+                "senderName": "Agent 1: Documentation Reviewer",
+                "timestamp": time_str,
+                "text": "I have analyzed your software requirements and generated technical specifications.",
+                "checklist": [
+                    "Analyzed architecture boundaries & target framework",
+                    "Extracted functional requirements & API contracts",
+                    "Created test specifications",
+                    "Generated Technical Design Document (TDD)",
+                ],
+            })
+
+        if has_spec and not approvals:
+            engine = ApprovalEngine(db=db)
+            app = engine.create_approval_request(
+                workflow_run_id=latest_run.id,
+                gate_type="SPECIFICATION",
+                prompt_text="Please review the technical design and test specifications. Shall I proceed with implementation?",
+            )
+            db.commit()
+            approvals = [app]
+
+        if approvals:
+            app = approvals[-1]
+            messages.append({
+                "id": f"approval-{app.id}",
+                "sender": "agent1",
+                "senderName": "Agent 1: Documentation Reviewer",
+                "timestamp": time_str,
+                "text": "Human approval required to proceed with code implementation.",
+                "isApprovalCard": True,
+                "approvalRequired": True,
+                "approvalId": str(app.id),
+                "gateType": app.gate_type,
+                "status": app.status,
+                "isApproved": (app.status == "APPROVED"),
             })
 
     has_dev = any("DEVELOPMENT" in cp.checkpoint_key for cp in checkpoints) or has_code_on_disk

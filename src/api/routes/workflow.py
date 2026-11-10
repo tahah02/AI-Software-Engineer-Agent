@@ -45,12 +45,38 @@ from src.infrastructure.orchestration.approval_engine import ApprovalEngine
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
 GREETING_WORDS = {
-
-    "hi", "hello", "hey", "salam", "assalam", "assalam o alaikum",
-
-    "aoa", "good morning", "good evening", "good afternoon", "hola", "kese ho", "kaise ho"
-
+    "hi", "hello", "hey", "heyy", "hiii", "salam", "assalam", "assalam o alaikum",
+    "aoa", "good morning", "good evening", "good afternoon", "hola", "kese ho", "kaise ho",
+    "kya haal hai", "kya hal hai", "what's up", "whats up", "sup", "yo", "test", "testing",
+    "hi there", "hello there", "how are you", "who are you", "help", "ok", "okay",
+    "thanks", "thank you", "bye", "goodbye"
 }
+
+TECHNICAL_KEYWORDS = {
+    "api", "app", "crud", "endpoint", "backend", "frontend", "fastapi", "dotnet",
+    "c#", "csharp", "python", "sqlite", "postgres", "sql", "database", "service",
+    "system", "controller", "repository", "auth", "login", "jwt", "model", "build",
+    "create", "develop", "implement", "spec", "srs", "requirements", "student", "microservice"
+}
+
+def is_conversational_or_greeting(text: str) -> bool:
+    import re
+    raw = (text or "").strip()
+    if not raw:
+        return True
+
+    cleaned = raw.lower().rstrip("!.,? \t\n")
+    alpha_only = re.sub(r'[^a-zA-Z\s]', '', cleaned).strip()
+
+    if cleaned in GREETING_WORDS or alpha_only in GREETING_WORDS:
+        return True
+
+    words = re.findall(r'[a-zA-Z0-9_#+]+', cleaned)
+    if len(words) <= 3:
+        if not any(w in TECHNICAL_KEYWORDS for w in words):
+            return True
+
+    return False
 
 def extract_text_from_file(filename: str, content: bytes) -> str:
 
@@ -412,29 +438,29 @@ def start_workflow_endpoint(
         return git_push_resp
 
     # 1. Conversational Greeting check
-
-    if cleaned in GREETING_WORDS or len(cleaned) < 3:
+    if is_conversational_or_greeting(req.user_requirement):
+        reply = (
+            "Hello! I am your Autonomous AI Software Engineer (AAISE).\n\n"
+            "Please describe the software application or feature you would like to build "
+            "(e.g., *'Build a Student Management CRUD API with ASP.NET Core and SQLite'* or *'Create a customer billing microservice with FastAPI'*), "
+            "or attach an SRS/specification document, and our specialized agents will design, implement, test, and audit it for you!"
+        )
+        if req.project_id:
+            try:
+                p_uuid = uuid.UUID(req.project_id)
+                proj = db.query(ProjectORM).filter_by(id=p_uuid).first()
+                if proj:
+                    save_chat_message(db, proj.id, "user", req.user_requirement)
+                    save_chat_message(db, proj.id, "assistant", reply)
+            except Exception:
+                pass
 
         return StartWorkflowResponse(
-
+            project_id=uuid.UUID(req.project_id) if req.project_id else None,
             status="CONVERSATION",
-
             message="Greeting received.",
-
             is_greeting=True,
-
-            assistant_reply=(
-
-                "Hello! I am your Autonomous AI Software Engineer (AAISE). "
-
-                "You can describe any application or feature you'd like to build. "
-
-                "I will coordinate the specialized agents to review specs, write code, run contract tests, and perform security audits. "
-
-                "What would you like to build today?"
-
-            ),
-
+            assistant_reply=reply,
         )
 
     # 2. Dynamic target framework detection
@@ -689,6 +715,31 @@ async def start_workflow_multipart_endpoint(
     if git_push_resp:
 
         return git_push_resp
+
+    if not files and is_conversational_or_greeting(full_requirement):
+        reply = (
+            "Hello! I am your Autonomous AI Software Engineer (AAISE).\n\n"
+            "Please describe the software application or feature you would like to build "
+            "(e.g., *'Build a Student Management CRUD API with ASP.NET Core and SQLite'* or *'Create a customer billing microservice with FastAPI'*), "
+            "or attach an SRS/specification document, and our specialized agents will design, implement, test, and audit it for you!"
+        )
+        if project_id:
+            try:
+                p_uuid = uuid.UUID(project_id)
+                proj = db.query(ProjectORM).filter_by(id=p_uuid).first()
+                if proj:
+                    save_chat_message(db, proj.id, "user", full_requirement)
+                    save_chat_message(db, proj.id, "assistant", reply)
+            except Exception:
+                pass
+
+        return StartWorkflowResponse(
+            project_id=uuid.UUID(project_id) if project_id else None,
+            status="CONVERSATION",
+            message="Greeting received.",
+            is_greeting=True,
+            assistant_reply=reply,
+        )
 
     detected_framework = detect_target_framework(full_requirement)
 
@@ -963,6 +1014,56 @@ def resolve_approval_endpoint(
                     run.project_id,
 
                     "Specifications approved. Proceed with full application implementation and build verification.",
+
+                    run.id,
+
+                )
+
+        else:
+
+            run = db.query(WorkflowRunORM).filter_by(id=resolved.workflow_run_id).first()
+
+            if run:
+
+                run.status = "RUNNING"
+
+                run.current_phase = "SPECIFICATION"
+
+                db.commit()
+
+                feedback = (req.comments or "").strip() or "Please revise specifications according to requested changes."
+
+                save_chat_message(
+
+                    db,
+
+                    run.project_id,
+
+                    "user",
+
+                    f"Requested Changes to Specifications:\n{feedback}",
+
+                )
+
+                save_chat_message(
+
+                    db,
+
+                    run.project_id,
+
+                    "agent1",
+
+                    "Analyzing requested changes. Revising Technical Design Document (TDD) and Test Specifications...",
+
+                )
+
+                background_tasks.add_task(
+
+                    _run_orchestrator_job,
+
+                    run.project_id,
+
+                    f"Please revise the technical design and test specifications according to the following changes requested by the reviewer:\n\n{feedback}",
 
                     run.id,
 

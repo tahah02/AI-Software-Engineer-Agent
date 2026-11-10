@@ -60,23 +60,31 @@ Respond ONLY with a valid JSON object containing relative paths and file content
 
     if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
         return """You are Agent 3: Main Coding Agent.
-Target Framework: C# ASP.NET Core 9.0 Web API with SQLite and Swagger.
+Target Framework: C# ASP.NET Core Web API (.NET 8 / 9) with SQLite, EF Core, and Swagger.
 
 Your responsibility:
 1. Read the Technical Design Document and implement complete, production-ready, readable multi-file C# source code.
-2. Structure your project cleanly according to Clean Architecture standards:
-   - `channel-app.csproj`: net9.0 SDK project with Microsoft.EntityFrameworkCore.Sqlite, Microsoft.EntityFrameworkCore.Design, Swashbuckle.AspNetCore packages.
-   - `Program.cs`: Configures SQLite DbContext, Controllers, Swagger/OpenAPI, applies EnsureCreated() on startup, and maps controllers.
+2. STRICT SCOPE REQUIREMENT:
+   - Implement ONLY the entities, controllers, services, and repositories specified in the Technical Design Document.
+   - DO NOT invent or include unrelated example entities like 'Job', 'JobsController', or 'WeatherForecast'.
+3. Structure your project cleanly according to Clean Architecture standards:
+   - `channel-app.csproj`: SDK project with:
+     * Microsoft.EntityFrameworkCore.Sqlite
+     * Microsoft.EntityFrameworkCore.Design
+     * Swashbuckle.AspNetCore
+     * Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
+   - `Program.cs`: Configures SQLite DbContext, Controllers, Swagger/OpenAPI, Authentication/Authorization, Rate Limiting, HealthChecks, and maps controllers.
    - `appsettings.json`: With ConnectionStrings:DefaultConnection = "Data Source=app.db".
    - `Properties/launchSettings.json`: Configured for http://localhost:5100 with launchUrl: "swagger".
-   - `Models/`: Clean domain entities with proper C# properties, primary keys, and relationships.
-   - `Data/AppDbContext.cs`: EF Core DbContext with DbSets for each model entity.
-   - `DTOs/`: Dedicated Request and Response DTO classes or records with validation attributes.
-   - `Controllers/`: Dedicated API controllers with [ApiController], [Route("api/[controller]")], and full CRUD actions (GET all, GET by id, POST, PUT, DELETE).
-3. Quality & Authenticity Standards:
-   - NO minified single-line code. Format and indent properly.
-   - NO placeholders, NO `// TODO`, NO dummy mock data. All CRUD endpoints must interact with AppDbContext.
-   - Code MUST compile cleanly without any CS errors. Use correct namespaces: `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`.
+   - `Models/`: Clean domain entities exactly as specified in the TDD.
+   - `Data/AppDbContext.cs`: EF Core DbContext with DbSets corresponding ONLY to design entities.
+   - `DTOs/`: Dedicated Request and Response DTO classes or records matching the exact contract in the TDD.
+   - `Controllers/`: Dedicated API controllers for designed endpoints.
+   - `Services/` & `Repositories/`: Clean separation of business logic and database operations.
+4. Quality & Authenticity Standards:
+   - Format and indent properly.
+   - NO placeholders, NO `// TODO`, NO dummy mock data.
+   - Code MUST compile cleanly without any CS errors. Use consistent namespaces: `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`.
 
 Respond ONLY with a valid JSON object containing relative paths and file contents:
 {
@@ -84,11 +92,7 @@ Respond ONLY with a valid JSON object containing relative paths and file content
     "channel-app.csproj": "<Project Sdk=\"Microsoft.NET.Sdk.Web\">...</Project>",
     "Program.cs": "using Microsoft.EntityFrameworkCore; ...",
     "appsettings.json": "{\\n  \"ConnectionStrings\": { \"DefaultConnection\": \"Data Source=app.db\" }\\n}",
-    "Properties/launchSettings.json": "{...}",
-    "Models/Job.cs": "namespace ChannelApp.Models; ...",
-    "Data/AppDbContext.cs": "namespace ChannelApp.Data; ...",
-    "DTOs/JobDtos.cs": "namespace ChannelApp.DTOs; ...",
-    "Controllers/JobsController.cs": "namespace ChannelApp.Controllers; ..."
+    "Properties/launchSettings.json": "{...}"
   }
 }"""
 
@@ -275,6 +279,16 @@ class MainCodingAgent(BaseAgent):
                             written_files.append("channel-app.sln")
                     except Exception as e:
                         logger.warning(f"Could not generate solution file: {e}")
+
+            # Clean up residual orphaned files if reported in build errors
+            for stray in ["Controllers/JobsController.cs", "DTOs/JobDtos.cs", "Models/Job.cs"]:
+                stray_path = Path(channel_repo_path) / stray
+                if stray_path.exists() and "Jobs" not in (context.target_framework or ""):
+                    try:
+                        stray_path.unlink()
+                        logger.info(f"Removed out-of-scope residual file: {stray}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove {stray}: {e}")
 
             # Run build verification gate
             build_success, build_output = self._execute_build_verification(channel_repo_path, context.target_framework)

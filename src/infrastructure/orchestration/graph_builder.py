@@ -7,15 +7,6 @@ from src.domain.workflow_state import WorkflowState
 
 
 def route_after_spec_approval(state: WorkflowState) -> str:
-    # If human requested revisions or rejected specs, loop back to Agent 1 (Doc Reviewer)
-    comments = state.get("spec_approval_comments")
-    if comments:
-        state["user_requirement"] = (
-            f"{state.get('user_requirement', '')}\n\n"
-            f"[Human Revision Request]: {comments}"
-        )
-        return "doc_reviewer"
-
     # If human approval has not been granted yet, stop workflow and wait for human approval
     if not state.get("spec_approved", False):
         return END
