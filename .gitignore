@@ -106,3 +106,6 @@ temp/
 # 9. MCP Secrets & Local Credentials
 mcp_secrets.env
 mcp_config.local.json
+
+# AAISE Generated Agent Workspaces
+/workspace/
