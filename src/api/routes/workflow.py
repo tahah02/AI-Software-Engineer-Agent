@@ -160,16 +160,41 @@ def detect_target_framework(text: str, default: str = "DOTNET_CSHARP") -> str:
     ]
     next_score = sum(len(re.findall(p, lower)) for p in next_patterns)
 
+    # 5. Check for Vue / Nuxt
+    vue_patterns = [r"\bvue\b", r"\bnuxt\b", r"\bvuejs\b"]
+    vue_score = sum(len(re.findall(p, lower)) for p in vue_patterns)
+
+    # 6. Check for Angular
+    angular_patterns = [r"\bangular\b"]
+    angular_score = sum(len(re.findall(p, lower)) for p in angular_patterns)
+
+    # 7. Check for Svelte
+    svelte_patterns = [r"\bsvelte\b", r"\bsveltekit\b"]
+    svelte_score = sum(len(re.findall(p, lower)) for p in svelte_patterns)
+
     scores = {
         "DOTNET_CSHARP": dotnet_score,
         "PYTHON_FASTAPI": python_score,
         "RUBY_RAILS": ruby_score,
         "TYPESCRIPT_NEXTJS": next_score,
+        "VUE_NUXT": vue_score,
+        "ANGULAR": angular_score,
+        "SVELTE": svelte_score,
     }
     best = max(scores, key=scores.get)
     if scores[best] > 0:
         return best
     return default
+
+def is_client_extension_intent(text: str) -> bool:
+    lower = text.lower()
+    client_patterns = [
+        r"\bfrontend\b", r"\bfront-end\b", r"\bfront end\b", r"\bclient app\b",
+        r"\bclient\b", r"\bui\b", r"\buser interface\b", r"\bweb app\b",
+        r"\bweb portal\b", r"\bportal\b", r"\bdashboard\b", r"\bmobile app\b",
+        r"\bspa\b", r"\bgui\b"
+    ]
+    return any(re.search(p, lower) for p in client_patterns)
 
 class StartWorkflowRequest(BaseModel):
 
@@ -253,167 +278,175 @@ async def _run_orchestrator_job(project_id: uuid.UUID, requirement: str, run_id:
 
 GIT_URL_REGEX = re.compile(r'https?://(?:www\.)?(?:github\.com|gitlab\.com)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?')
 
+def _clean_git_url(raw_url: str) -> str:
+    url = raw_url.rstrip(".,;!?:")
+    if not url.endswith(".git"):
+        url = url + ".git"
+    return url
+
 def handle_git_push_intent(user_text: str, project_id: str | None, db: Session) -> StartWorkflowResponse | None:
-
-    match = GIT_URL_REGEX.search(user_text)
-
-    if not match:
-
+    matches = GIT_URL_REGEX.findall(user_text)
+    if not matches:
         return None
 
-    repo_url = match.group(0).rstrip(".,;!?:")
-
-    if not repo_url.endswith(".git"):
-
-        repo_url = repo_url + ".git"
-
     # Identify target project
-
     project = None
-
     if project_id:
-
         try:
-
             p_uuid = uuid.UUID(project_id)
-
             project = db.query(ProjectORM).filter_by(id=p_uuid).first()
-
         except ValueError:
-
             pass
 
     if not project:
-
         project = db.query(ProjectORM).order_by(ProjectORM.created_at.desc()).first()
 
     if not project:
-
         return StartWorkflowResponse(
-
             status="ERROR",
-
             message="No active project found.",
-
             is_greeting=True,
-
             assistant_reply="❌ No active project found to push. Please select a project or describe your requirements first.",
-
         )
 
     git_service = GitService(db=db)
-
     channel_repo_path = Path(git_service.get_repository_path(project.id, RepositoryType.CHANNEL_APP))
+    mock_repo_path = Path(git_service.get_repository_path(project.id, RepositoryType.MOCK_VENDOR_API))
 
-    if not (channel_repo_path / ".git").exists():
+    has_channel = (channel_repo_path / ".git").exists()
+    has_mock = (mock_repo_path / ".git").exists()
 
+    if not has_channel and not has_mock:
         return StartWorkflowResponse(
-
             project_id=project.id,
-
             status="ERROR",
-
             message="Repository not initialized.",
-
             is_greeting=True,
-
             assistant_reply=(
-
-                f"❌ Local Git repository for **{project.name}** has not been initialized yet.\n\n"
-
+                f"❌ Local Git repositories for **{project.name}** have not been initialized yet.\n\n"
                 "Please describe your requirements first so that code can be generated and committed before pushing to remote."
-
             ),
-
         )
 
-    # Perform remote push
+    lower_text = user_text.lower()
+    targets_to_push: list[tuple[RepositoryType, str]] = []
 
-    push_result = git_service.push_to_remote(
+    # Check for labeled push commands: e.g. "channel: https://..." or "mock: https://..."
+    channel_match = re.search(r'(?:channel|app|main)[\s:=]+(https?://[^\s,;]+)', user_text, re.IGNORECASE)
+    mock_match = re.search(r'(?:mock|vendor)[\s:=]+(https?://[^\s,;]+)', user_text, re.IGNORECASE)
 
-        project_id=project.id,
+    if channel_match and has_channel:
+        targets_to_push.append((RepositoryType.CHANNEL_APP, _clean_git_url(channel_match.group(1))))
+    if mock_match and has_mock:
+        targets_to_push.append((RepositoryType.MOCK_VENDOR_API, _clean_git_url(mock_match.group(1))))
 
-        repo_type=RepositoryType.CHANNEL_APP,
+    # If neither was parsed via key-value label:
+    if not targets_to_push:
+        clean_url = _clean_git_url(matches[0])
+        is_mock_keyword = any(w in lower_text for w in ["mock", "vendor"]) and not any(w in lower_text for w in ["channel", "app"])
+        is_channel_keyword = any(w in lower_text for w in ["channel", "app", "main"]) and not any(w in lower_text for w in ["mock", "vendor"])
 
-        remote_url=repo_url,
+        if has_channel and has_mock:
+            # BOTH repositories exist on disk. Enforce ambiguity guard!
+            if is_mock_keyword:
+                targets_to_push.append((RepositoryType.MOCK_VENDOR_API, clean_url))
+            elif is_channel_keyword:
+                targets_to_push.append((RepositoryType.CHANNEL_APP, clean_url))
+            else:
+                reply = (
+                    f"⚠️ **Dual-Repository Ambiguity Guard**\n\n"
+                    f"Project **{project.name}** maintains **2 separate isolated Git repositories**:\n"
+                    f"1. 📦 **`channel-app`** (Main application & core business logic)\n"
+                    f"2. 🎭 **`mock-vendor-api`** (Mock vendor API simulator)\n\n"
+                    f"To prevent branch collisions and guarantee dual-repository isolation, please specify which repository you are pushing:\n"
+                    f"- `push channel {clean_url}`\n"
+                    f"- `push mock {clean_url}`\n\n"
+                    f"Or provide distinct repository URLs for both:\n"
+                    f"`channel: <channel_repo_url> mock: <mock_vendor_url>`"
+                )
+                save_chat_message(db, project.id, "user", user_text)
+                save_chat_message(db, project.id, "assistant", reply)
+                return StartWorkflowResponse(
+                    project_id=project.id,
+                    status="AMBIGUOUS_PUSH_TARGET",
+                    message="Multiple repositories exist. Specify target repository.",
+                    is_greeting=True,
+                    assistant_reply=reply,
+                )
+        elif has_channel and not has_mock:
+            if is_mock_keyword:
+                reply = (
+                    f"ℹ️ Project **{project.name}** does not have a `mock-vendor-api` repository "
+                    f"because third-party vendor mocks were not required / skipped for this project.\n\n"
+                    f"Only **`channel-app`** is initialized."
+                )
+                save_chat_message(db, project.id, "user", user_text)
+                save_chat_message(db, project.id, "assistant", reply)
+                return StartWorkflowResponse(
+                    project_id=project.id,
+                    status="NO_MOCK_REPO",
+                    message="Mock repository not applicable for this project.",
+                    is_greeting=True,
+                    assistant_reply=reply,
+                )
+            targets_to_push.append((RepositoryType.CHANNEL_APP, clean_url))
+        elif has_mock and not has_channel:
+            targets_to_push.append((RepositoryType.MOCK_VENDOR_API, clean_url))
 
-    )
+    # Execute pushes
+    results: list[dict[str, Any]] = []
+    overall_success = True
 
-    if push_result.get("success"):
-
-        branch = push_result.get("branch", "develop")
-
-        reply = (
-
-            f"✅ Git Push Successful!\n\n"
-
-            f"```\n"
-
-            f"branch '{branch}' set up to track 'origin/{branch}'.\n\n"
-
-            f"To {repo_url}\n"
-
-            f" * [new branch]      {branch} -> {branch}\n"
-
-            f"```\n"
-
-            f"All local commits have been pushed to remote repository."
-
-        )
-
-        save_chat_message(db, project.id, "user", user_text)
-
-        save_chat_message(db, project.id, "assistant", reply)
-
-        return StartWorkflowResponse(
-
+    for repo_type, remote_url in targets_to_push:
+        res = git_service.push_to_remote(
             project_id=project.id,
-
-            status="PUSH_SUCCESS",
-
-            message="Git push completed successfully.",
-
-            is_greeting=True,
-
-            assistant_reply=reply,
-
+            repo_type=repo_type,
+            remote_url=remote_url,
         )
+        res["repo_type"] = repo_type.value if hasattr(repo_type, "value") else str(repo_type)
+        results.append(res)
+        if not res.get("success"):
+            overall_success = False
 
+    # Format assistant reply
+    report_lines: list[str] = []
+    if overall_success:
+        report_lines.append("### ✅ Git Push Successful!\n")
+        for r in results:
+            repo_label = "📦 **Channel Application**" if "channel" in r["repo_type"].lower() else "🎭 **Mock Vendor API**"
+            branch = r.get("branch", "develop")
+            report_lines.append(f"{repo_label}:")
+            report_lines.append(f"- **Remote URL:** `{r['remote_url']}`")
+            report_lines.append(f"- **Branch:** `{branch}` -> `origin/{branch}`")
+            report_lines.append(f"```\n{r.get('output', 'Pushed successfully.')}\n```\n")
+        report_lines.append("All commits for the selected repositories have been pushed to remote.")
+        reply_status = "PUSH_SUCCESS"
+        reply_msg = "Git push completed successfully."
     else:
+        report_lines.append("### ⚠️ Git Push Encountered Issues\n")
+        for r in results:
+            repo_label = "📦 **Channel Application**" if "channel" in r["repo_type"].lower() else "🎭 **Mock Vendor API**"
+            branch = r.get("branch", "develop")
+            if r.get("success"):
+                report_lines.append(f"{repo_label}: ✅ Pushed successfully to `{r['remote_url']}` (branch: `{branch}`).")
+            else:
+                report_lines.append(f"{repo_label}: ❌ Push failed to `{r['remote_url']}` (branch: `{branch}`).")
+                report_lines.append(f"```\n{r.get('error', 'Unknown push error')}\n```")
+        report_lines.append("\nPlease verify repository permissions and network access.")
+        reply_status = "PUSH_FAILED"
+        reply_msg = "One or more git push operations failed."
 
-        err = push_result.get("error", "Unknown push error")
+    final_reply = "\n".join(report_lines)
+    save_chat_message(db, project.id, "user", user_text)
+    save_chat_message(db, project.id, "assistant", final_reply)
 
-        reply = (
-
-            f"⚠️ Git Push encountered an issue:\n\n"
-
-            f"```\n{err}\n```\n\n"
-
-            f"🔗 **Remote URL:** `{repo_url}`\n"
-
-            f"📁 **Branch:** `{push_result.get('branch', 'develop')}`\n\n"
-
-            f"Please verify that the repository exists on GitHub and that your environment has push access."
-
-        )
-
-        save_chat_message(db, project.id, "user", user_text)
-
-        save_chat_message(db, project.id, "assistant", reply)
-
-        return StartWorkflowResponse(
-
-            project_id=project.id,
-
-            status="PUSH_FAILED",
-
-            message="Git push failed.",
-
-            is_greeting=True,
-
-            assistant_reply=reply,
-
-        )
+    return StartWorkflowResponse(
+        project_id=project.id,
+        status=reply_status,
+        message=reply_msg,
+        is_greeting=True,
+        assistant_reply=final_reply,
+    )
 
 @router.post("/start", response_model=StartWorkflowResponse, status_code=status.HTTP_200_OK)
 
@@ -516,13 +549,10 @@ def start_workflow_endpoint(
         db.commit()
 
     else:
-
-        # Dynamically adopt detected framework if project has default framework
-
-        if project.target_framework == "PYTHON_FASTAPI" and detected_framework != "PYTHON_FASTAPI":
-
+        # Dynamically adopt detected framework if user explicitly requests a stack switch
+        is_client_ext = is_client_extension_intent(req.user_requirement)
+        if not is_client_ext and detected_framework and detected_framework != project.target_framework:
             project.target_framework = detected_framework
-
             db.commit()
 
     run = (
@@ -992,18 +1022,6 @@ def resolve_approval_endpoint(
                     "user",
 
                     "Specifications approved. Proceed with full application implementation and build verification.",
-
-                )
-
-                save_chat_message(
-
-                    db,
-
-                    run.project_id,
-
-                    "agent3",
-
-                    "Starting application implementation, Clean Architecture directory setup, and component synthesis...",
 
                 )
 

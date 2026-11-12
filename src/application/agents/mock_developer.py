@@ -14,15 +14,17 @@ from src.ports.llm_gateway import LLMMessage, LLMRequest, ToolDefinition
 
 MOCK_DEVELOPER_SYSTEM_PROMPT = """You are Agent 2: Mock Vendor API Developer.
 Your responsibility:
-1. Review the Technical Design Document for third-party external vendor APIs (e.g., core banking, payment gateways, SMS gateways).
-2. Implement a standalone, runnable mock API server in Python (FastAPI).
-3. Generate realistic mock responses, error states, and schema-compliant payloads.
+1. Strictly analyze the Technical Design Document (TDD) provided in the prompt to identify all external vendor, mock, and third-party dependencies, contract endpoints, routes, HTTP methods, request parameters, and response schemas.
+2. Implement a complete, standalone, production-quality runnable mock API server in Python (FastAPI).
+3. Implement exactly the endpoints, routes, status codes, and JSON response models specified in the TDD for vendor simulation. Never hallucinate or substitute unrelated banking/payment endpoints unless explicitly specified in the TDD.
+4. Always include a GET /health endpoint returning {"status": "healthy"}.
+5. Generate realistic mock responses, error states, and schema-compliant payloads.
 
-Respond with a JSON object containing the relative file paths and their contents:
+Respond strictly with a JSON object containing the relative file paths and their contents:
 {
   "files": {
-    "main.py": "# FastAPI mock server code...",
-    "requirements.txt": "fastapi\\nuvicorn\\n"
+    "main.py": "# Complete FastAPI mock server code...",
+    "requirements.txt": "fastapi>=0.100.0\\nuvicorn>=0.23.0\\npydantic>=2.0.0\\n"
   }
 }
 """
@@ -50,8 +52,45 @@ class MockVendorDeveloperAgent(BaseAgent):
     def get_tools(self) -> list[ToolDefinition]:
         return [get_file_write_tool()]
 
+    def _read_technical_design(self, workspace_path: str) -> str:
+        tdd_path = Path(workspace_path) / "docs" / "TECHNICAL_DESIGN.md"
+        if tdd_path.exists():
+            try:
+                return tdd_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+        return ""
+
+    @staticmethod
+    def is_vendor_mock_skipped(text: str) -> bool:
+        lower = text.lower()
+        if "agent 2" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+            return True
+        if "mock api developer" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+            return True
+        return False
+
     async def execute(self, context: AgentContext, input_text: str) -> AgentResult:
-        messages = self.build_initial_messages(context, input_text)
+        tdd_text = input_text
+        if not tdd_text or "Technical Design" not in tdd_text:
+            workspace_tdd = self._read_technical_design(context.workspace_path)
+            if workspace_tdd:
+                tdd_text = (
+                    f"## Technical Design Document:\n\n{workspace_tdd}\n\n"
+                    f"## Directive:\n"
+                    f"Analyze the Technical Design Document above. Implement a standalone, runnable FastAPI mock vendor server "
+                    f"with all schema-compliant mock endpoints required by the project specifications."
+                )
+
+        if self.is_vendor_mock_skipped(tdd_text):
+            return AgentResult(
+                success=True,
+                summary="Agent 2 skipped: Specification confirms no mock vendor APIs are required.",
+                artifacts_created=[],
+                metadata={"skipped": True, "branch": "skipped"},
+            )
+
+        messages = self.build_initial_messages(context, tdd_text)
 
         resolved_config = self.resolver.resolve_agent_config(
             session=self.db,

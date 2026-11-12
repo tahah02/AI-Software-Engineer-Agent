@@ -37,8 +37,18 @@ class ResolvedAgentExecutionConfig:
 
 
 class LLMProviderResolver:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        litellm_adapter: ILLMGateway | None = None,
+        ollama_adapter: ILLMGateway | None = None,
+    ) -> None:
         self._adapters: dict[LLMProvider, ILLMGateway] = {}
+        if litellm_adapter:
+            self._adapters[LLMProvider.GEMINI] = litellm_adapter
+            self._adapters[LLMProvider.GROQ] = litellm_adapter
+            self._adapters[LLMProvider.OPENROUTER] = litellm_adapter
+        if ollama_adapter:
+            self._adapters[LLMProvider.OLLAMA] = ollama_adapter
 
     def _get_adapter(self, provider: LLMProvider) -> ILLMGateway:
         if provider not in self._adapters:

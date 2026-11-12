@@ -86,33 +86,57 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
         adapter = resolved_config.adapter
 
         framework = context.target_framework or "DOTNET_CSHARP"
+        is_incremental = context.additional_metadata.get("is_incremental", False)
+        subsystem_framework = context.additional_metadata.get("subsystem_framework") or "TYPESCRIPT_NEXTJS"
 
-        # Pass 1: Generate exhaustive TECHNICAL_DESIGN.md in pure Markdown
-        tdd_user_content = input_text
-        if existing_tdd:
-            tdd_user_content = (
-                f"## Current Technical Design on Disk:\n\n{existing_tdd}\n\n"
-                f"## MANDATORY USER REVISION REQUEST & REQUIRED CORRECTIONS:\n\n{input_text}\n\n"
-                f"Update and expand docs/TECHNICAL_DESIGN.md to incorporate every single requested correction. Do NOT abbreviate."
+        from src.api.routes.workflow import is_client_extension_intent
+        if not is_incremental and existing_tdd and is_client_extension_intent(input_text):
+            is_incremental = True
+
+        # Pass 1: Generate or incrementally evolve TECHNICAL_DESIGN.md in pure Markdown
+        if is_incremental and existing_tdd:
+            prompt_tdd = (
+                f"You are a Principal Enterprise Software Architect.\n"
+                f"The project already has an authoritative backend architecture fully specified in docs/TECHNICAL_DESIGN.md:\n\n"
+                f"### Existing Technical Design Document (MUST BE PRESERVED):\n{existing_tdd}\n\n"
+                f"### NEW CLIENT / FRONTEND EXTENSION DIRECTIVE:\n{input_text}\n\n"
+                f"CRITICAL INCREMENTAL ARCHITECTURE DIRECTIVES:\n"
+                f"1. PRESERVE the existing backend sections (Sections 1 through 8) completely intact. DO NOT delete, shorten, or alter them.\n"
+                f"2. APPEND a dedicated new section: `## Section 9: Client Interface Specification ({subsystem_framework})`.\n"
+                f"3. In Section 9, write out:\n"
+                f"   - Target Subsystem Directory: `frontend/` (isolated from backend in `channel-app/`)\n"
+                f"   - Technology Stack: {subsystem_framework} (e.g. Next.js 15 App Router, React 19, TypeScript, Tailwind CSS)\n"
+                f"   - Component & Page Hierarchy (layouts, views, forms, metric summary cards)\n"
+                f"   - API Integration Mapping: Concrete endpoints mapping showing how each UI action/form calls the existing backend endpoints in Section 3\n"
+                f"   - State Management & Validation (matching domain validation rules in Section 5)\n\n"
+                f"Output pure Markdown containing the full document with Section 9 appended. Do NOT wrap in JSON."
             )
+        else:
+            tdd_user_content = input_text
+            if existing_tdd:
+                tdd_user_content = (
+                    f"## Current Technical Design on Disk:\n\n{existing_tdd}\n\n"
+                    f"## MANDATORY USER REVISION REQUEST & REQUIRED CORRECTIONS:\n\n{input_text}\n\n"
+                    f"Update and expand docs/TECHNICAL_DESIGN.md to incorporate every single requested correction. Do NOT abbreviate."
+                )
 
-        prompt_tdd = (
-            f"You are a Principal Enterprise Software Architect.\n"
-            f"Generate the complete, exhaustive, production-grade Technical Design Document (docs/TECHNICAL_DESIGN.md) for {framework}.\n\n"
-            f"### Authoritative Requirements Specification (SRS) & Directives:\n{tdd_user_content}\n\n"
-            f"CRITICAL ARCHITECTURAL DIRECTIVES:\n"
-            f"1. Treat the provided SRS as the ABSOLUTE SINGLE SOURCE OF TRUTH. Strictly adhere ONLY to the entities, endpoints, database schema, functional requirements (FR), and security rules defined in the SRS above. DO NOT inject foreign entities or endpoints from any previous or unrelated projects.\n"
-            f"2. MANDATORY SECTIONS TO WRITE OUT FULLY:\n"
-            f"   - 1. System Architecture & Component Design (Layered pattern appropriate for {framework}, DI registrations, async flow)\n"
-            f"   - 2. Database Design & Domain Model (All entity fields, types, constraints, indexes, ORM migrations, persistence lifecycle strictly per SRS)\n"
-            f"   - 3. API Specifications (Exact endpoints, HTTP methods, request/response DTOs, payload constraints, status codes, RFC 9457 Problem Details strictly per SRS)\n"
-            f"   - 4. Security, Authentication & Authorization (Authentication scheme, permissions/claims, identity context as specified in SRS)\n"
-            f"   - 5. Audit & Validation Rules (Field lifecycle, validation rules, normalization strictly per SRS)\n"
-            f"   - 6. Production Readiness (Rate limiting, structured logging, correlation IDs, health checks)\n"
-            f"   - 7. Git Workflow & Branching Strategy\n"
-            f"   - 8. Requirement Traceability Matrix (Mapping every FR-xx and NFR-xx from the SRS)\n\n"
-            f"Output pure Markdown only. Do not wrap in JSON."
-        )
+            prompt_tdd = (
+                f"You are a Principal Enterprise Software Architect.\n"
+                f"Generate the complete, exhaustive, production-grade Technical Design Document (docs/TECHNICAL_DESIGN.md) for {framework}.\n\n"
+                f"### Authoritative Requirements Specification (SRS) & Directives:\n{tdd_user_content}\n\n"
+                f"CRITICAL ARCHITECTURAL DIRECTIVES:\n"
+                f"1. Treat the provided SRS as the ABSOLUTE SINGLE SOURCE OF TRUTH. Strictly adhere ONLY to the entities, endpoints, database schema, functional requirements (FR), and security rules defined in the SRS above. DO NOT inject foreign entities or endpoints from any previous or unrelated projects.\n"
+                f"2. MANDATORY SECTIONS TO WRITE OUT FULLY:\n"
+                f"   - 1. System Architecture & Component Design (Layered pattern appropriate for {framework}, DI registrations, async flow)\n"
+                f"   - 2. Database Design & Domain Model (All entity fields, types, constraints, indexes, ORM migrations, persistence lifecycle strictly per SRS)\n"
+                f"   - 3. API Specifications (Exact endpoints, HTTP methods, request/response DTOs, payload constraints, status codes, RFC 9457 Problem Details strictly per SRS)\n"
+                f"   - 4. Security, Authentication & Authorization (Authentication scheme, permissions/claims, identity context as specified in SRS)\n"
+                f"   - 5. Audit & Validation Rules (Field lifecycle, validation rules, normalization strictly per SRS)\n"
+                f"   - 6. Production Readiness (Rate limiting, structured logging, correlation IDs, health checks)\n"
+                f"   - 7. Git Workflow & Branching Strategy\n"
+                f"   - 8. Requirement Traceability Matrix (Mapping every FR-xx and NFR-xx from the SRS)\n\n"
+                f"Output pure Markdown only. Do not wrap in JSON."
+            )
 
         request_tdd = LLMRequest(
             provider=resolved_config.provider,
@@ -144,25 +168,39 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 logger.warning(f"Could not track tokens for TDD: {e}")
 
         # Pass 2: Generate exhaustive XUNIT_TEST_SPEC.md in pure Markdown
-        prompt_test = (
-            f"You are a Principal Lead QA Architect specializing in testing and contract verification for {framework}.\n"
-            f"Based on the following Technical Design and original SRS, generate the complete, exhaustive Test Specification document (docs/XUNIT_TEST_SPEC.md).\n\n"
-            f"### Technical Design Reference:\n{tech_design[:6000]}\n\n"
-            f"### Authoritative Requirements Specification (SRS) & Test Criteria:\n{input_text}\n\n"
-            f"CRITICAL TEST SPECIFICATION RULES:\n"
-            f"1. Treat the SRS and Technical Design as the STRICT SINGLE SOURCE OF TRUTH.\n"
-            f"2. Extract and preserve the EXACT Test Identifiers (e.g. UT-01..UT-xx, IT-01..IT-xx) and functional scope directly from the SRS. If the SRS specifies specific test cases or IDs, you MUST use those exact IDs and descriptions. NEVER inject unrelated test cases or entities from external domains.\n"
-            f"3. Output pure Markdown only. Do not wrap in JSON.\n"
-            f"4. DO NOT output just an outline, summary table, or placeholder ellipses. You MUST individually write out a dedicated detailed subsection for EVERY SINGLE test case with:\n"
-            f"   - Test ID & Descriptive Name (matching SRS IDs)\n"
-            f"   - Requirement Traced (FR-xx / NFR-xx)\n"
-            f"   - Preconditions & Mock Configuration\n"
-            f"   - Input Payload / Test Data\n"
-            f"   - Execution Steps\n"
-            f"   - Expected Result & Exact Assertions\n"
-            f"   - Database / State Verification\n"
-            f"5. Specify the exact test runner execution command (e.g. `dotnet test --configuration Release` or `pytest`)."
-        )
+        if is_incremental and existing_test_spec:
+            prompt_test = (
+                f"You are a Principal Lead QA Architect specializing in client contract verification and integration testing for {subsystem_framework}.\n"
+                f"The project already has an authoritative backend test specification in docs/XUNIT_TEST_SPEC.md:\n\n"
+                f"### Existing Test Specification (MUST BE PRESERVED):\n{existing_test_spec}\n\n"
+                f"### Technical Design Reference (with Section 9 Client Interface):\n{tech_design[:6000]}\n\n"
+                f"CRITICAL INCREMENTAL TEST RULES:\n"
+                f"1. PRESERVE all existing backend unit and integration tests (UT-xx, IT-xx) completely intact.\n"
+                f"2. APPEND a dedicated section: `## Section 15: Client Interface Contract & Component Tests`.\n"
+                f"3. Specify individual client component / UI integration test cases (e.g. UI-01, UI-02, UI-03) testing client form validation, API submission, and error state rendering.\n"
+                f"4. Specify the client test execution command (e.g. `npm test` or `npm run lint`).\n\n"
+                f"Output pure Markdown containing the full document with Section 15 appended."
+            )
+        else:
+            prompt_test = (
+                f"You are a Principal Lead QA Architect specializing in testing and contract verification for {framework}.\n"
+                f"Based on the following Technical Design and original SRS, generate the complete, exhaustive Test Specification document (docs/XUNIT_TEST_SPEC.md).\n\n"
+                f"### Technical Design Reference:\n{tech_design[:6000]}\n\n"
+                f"### Authoritative Requirements Specification (SRS) & Test Criteria:\n{input_text}\n\n"
+                f"CRITICAL TEST SPECIFICATION RULES:\n"
+                f"1. Treat the SRS and Technical Design as the STRICT SINGLE SOURCE OF TRUTH.\n"
+                f"2. Extract and preserve the EXACT Test Identifiers (e.g. UT-01..UT-xx, IT-01..IT-xx) and functional scope directly from the SRS. If the SRS specifies specific test cases or IDs, you MUST use those exact IDs and descriptions. NEVER inject unrelated test cases or entities from external domains.\n"
+                f"3. Output pure Markdown only. Do not wrap in JSON.\n"
+                f"4. DO NOT output just an outline, summary table, or placeholder ellipses. You MUST individually write out a dedicated detailed subsection for EVERY SINGLE test case with:\n"
+                f"   - Test ID & Descriptive Name (matching SRS IDs)\n"
+                f"   - Requirement Traced (FR-xx / NFR-xx)\n"
+                f"   - Preconditions & Mock Configuration\n"
+                f"   - Input Payload / Test Data\n"
+                f"   - Execution Steps\n"
+                f"   - Expected Result & Exact Assertions\n"
+                f"   - Database / State Verification\n"
+                f"5. Specify the exact test runner execution command (e.g. `dotnet test --configuration Release` or `pytest`)."
+            )
 
         request_test = LLMRequest(
             provider=resolved_config.provider,
@@ -193,23 +231,24 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
             except Exception as e:
                 logger.warning(f"Could not track tokens for Test Spec: {e}")
 
-        # Stack detection
-        detected_stack = None
-        lower_tdd = tech_design.lower()
-        if any(w in lower_tdd for w in ["asp.net", ".net 8", "c#", "xunit"]):
-            detected_stack = "DOTNET_CSHARP"
-        elif any(w in lower_tdd for w in ["fastapi", "pydantic", "pytest"]):
-            detected_stack = "PYTHON_FASTAPI"
-        elif any(w in lower_tdd for w in ["next.js", "nextjs", "react", "typescript"]):
-            detected_stack = "TYPESCRIPT_NEXTJS"
+        # Stack detection: Only align project framework if not an incremental extension
+        if not is_incremental:
+            detected_stack = None
+            lower_tdd = tech_design.lower()
+            if any(w in lower_tdd for w in ["asp.net", ".net 8", "c#", "xunit"]):
+                detected_stack = "DOTNET_CSHARP"
+            elif any(w in lower_tdd for w in ["fastapi", "pydantic", "pytest"]):
+                detected_stack = "PYTHON_FASTAPI"
+            elif any(w in lower_tdd for w in ["next.js", "nextjs", "react", "typescript"]):
+                detected_stack = "TYPESCRIPT_NEXTJS"
 
-        if self.db and detected_stack and detected_stack in ("DOTNET_CSHARP", "PYTHON_FASTAPI", "TYPESCRIPT_NEXTJS", "RUBY_RAILS"):
-            proj = self.db.query(ProjectORM).filter_by(id=context.project_id).first()
-            if proj and proj.target_framework != detected_stack:
-                logger.info(f"Agent 1 aligned project target_framework from {proj.target_framework} to {detected_stack}")
-                proj.target_framework = detected_stack
-                context.target_framework = detected_stack
-                self.db.commit()
+            if self.db and detected_stack and detected_stack in ("DOTNET_CSHARP", "PYTHON_FASTAPI", "TYPESCRIPT_NEXTJS", "RUBY_RAILS"):
+                proj = self.db.query(ProjectORM).filter_by(id=context.project_id).first()
+                if proj and proj.target_framework != detected_stack:
+                    logger.info(f"Agent 1 aligned project target_framework from {proj.target_framework} to {detected_stack}")
+                    proj.target_framework = detected_stack
+                    context.target_framework = detected_stack
+                    self.db.commit()
 
         # Write files to workspace
         tech_path = "docs/TECHNICAL_DESIGN.md"

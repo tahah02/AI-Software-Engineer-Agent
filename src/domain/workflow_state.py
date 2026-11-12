@@ -11,6 +11,7 @@ class WorkflowState(TypedDict, total=False):
 
     # Dynamic Agent Topology (Enabled/Disabled flags)
     enabled_agents: dict[str, bool]
+    requires_mock_vendor: bool
 
     # Artifacts & Repositories
     tdd_path: str | None
@@ -45,3 +46,8 @@ class WorkflowState(TypedDict, total=False):
     iteration: int
     is_completed: bool
     error: str | None
+
+    # Incremental Subsystem / Extension Tracking
+    is_incremental: bool
+    target_subsystem: str  # e.g. "channel-app", "frontend"
+    subsystem_framework: str | None

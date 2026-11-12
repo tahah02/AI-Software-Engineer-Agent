@@ -39,7 +39,6 @@ wheels/
 *.egg
 
 # 3. Python Testing, Linting & Type Checking
-tests/
 .pytest_cache/
 .coverage
 htmlcov/

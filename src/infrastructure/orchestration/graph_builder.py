@@ -12,7 +12,10 @@ def route_after_spec_approval(state: WorkflowState) -> str:
         return END
 
     enabled = state.get("enabled_agents", {})
-    if enabled.get(AgentType.MOCK_DEVELOPER.name, False) or enabled.get("MOCK_DEVELOPER", False):
+    mock_enabled = enabled.get(AgentType.MOCK_DEVELOPER.name, False) or enabled.get("MOCK_DEVELOPER", False)
+    requires_mock = state.get("requires_mock_vendor", True)
+
+    if mock_enabled and requires_mock:
         return "mock_developer"
     return "main_coder"
 

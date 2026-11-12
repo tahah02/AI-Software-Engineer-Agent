@@ -255,9 +255,11 @@ class LiteLLMAdapter(ILLMGateway):
                     model=model_name,
                     message=f"Provider error: {clean_msg}",
                 )
-                # Retry transient connection and 503 overload errors
-                if attempts < max_attempts and any(k in clean_msg.lower() for k in ("connection", "503", "overloaded", "unavailable", "timeout")):
-                    await asyncio.sleep(1.0 * attempts)
+                # Retry transient connection, DNS/socket, and 503 overload errors
+                transient_signals = ("connection", "503", "overloaded", "unavailable", "timeout", "getaddrinfo", "socket", "dns", "ssl")
+                if attempts < max_attempts and any(k in clean_msg.lower() for k in transient_signals):
+                    backoff = 2.0 * attempts if any(k in clean_msg.lower() for k in ("getaddrinfo", "dns", "socket")) else 1.0 * attempts
+                    await asyncio.sleep(backoff)
                     continue
                 break
 

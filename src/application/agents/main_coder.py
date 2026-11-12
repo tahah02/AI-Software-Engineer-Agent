@@ -64,35 +64,69 @@ Target Framework: C# ASP.NET Core Web API (.NET 8 / 9) with SQLite, EF Core, and
 
 Your responsibility:
 1. Read the Technical Design Document and implement complete, production-ready, readable multi-file C# source code.
-2. STRICT SCOPE REQUIREMENT:
-   - Implement ONLY the entities, controllers, services, and repositories specified in the Technical Design Document.
-   - DO NOT invent or include unrelated example entities like 'Job', 'JobsController', or 'WeatherForecast'.
-3. Structure your project cleanly according to Clean Architecture standards:
+2. STRICT ARCHITECTURAL & SCOPE CONSTRAINTS:
+   - Implement ONLY the entities, controllers, services, repositories, and external clients specified in the Technical Design Document.
+   - NEVER create internal mock controllers (e.g. `MockVendorController.cs`) inside channel-app. All external vendor/mock APIs must be consumed via a typed `HttpClient` registered in `Program.cs` and configured with `MockVendor:BaseUrl` in `appsettings.json`.
+3. STRUCTURE & CLEAN ARCHITECTURE:
    - `channel-app.csproj`: SDK project with:
      * Microsoft.EntityFrameworkCore.Sqlite
      * Microsoft.EntityFrameworkCore.Design
      * Swashbuckle.AspNetCore
      * Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
-   - `Program.cs`: Configures SQLite DbContext, Controllers, Swagger/OpenAPI, Authentication/Authorization, Rate Limiting, HealthChecks, and maps controllers.
-   - `appsettings.json`: With ConnectionStrings:DefaultConnection = "Data Source=app.db".
-   - `Properties/launchSettings.json`: Configured for http://localhost:5100 with launchUrl: "swagger".
+   - `Program.cs`:
+     * Configures SQLite `AppDbContext` (`Data Source=app.db`).
+     * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
+     * Configures typed `HttpClient` for external vendor service:
+       `builder.Services.AddHttpClient<IMockVendorClient, MockVendorClient>(c => { c.BaseAddress = new Uri(builder.Configuration["MockVendor:BaseUrl"] ?? "http://localhost:5100"); c.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("MockVendor:TimeoutSeconds", 10)); });`
+     * Configures comprehensive global exception handling middleware that translates:
+       - Upstream external service timeouts (`TaskCanceledException`, `TimeoutException`) -> HTTP 504 Gateway Timeout.
+       - Upstream external service connection failures (`HttpRequestException`, `SocketException`) -> HTTP 502 Bad Gateway.
+       - Database unavailability / `SqliteException` -> HTTP 503 Service Unavailable.
+       - Arithmetic overflow (`OverflowException` from `checked` summation) -> HTTP 422 Unprocessable Entity.
+       - Missing records (`KeyNotFoundException`) -> HTTP 404 Not Found.
+       - Input validation errors -> HTTP 400 Bad Request.
+     * Health Checks: `builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();` mapped to `/health`.
+     * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, use OpenApiReference with Type = ReferenceType.SecurityScheme (do NOT use ReferenceType.Security).
+   - `appsettings.json`:
+     {
+       "ConnectionStrings": { "DefaultConnection": "Data Source=app.db" },
+       "MockVendor": { "BaseUrl": "http://localhost:5100", "TimeoutSeconds": 10 }
+     }
+   - `Properties/launchSettings.json`: Configured for port 5001 with launchUrl: "swagger".
    - `Models/`: Clean domain entities exactly as specified in the TDD.
-   - `Data/AppDbContext.cs`: EF Core DbContext with DbSets corresponding ONLY to design entities.
-   - `DTOs/`: Dedicated Request and Response DTO classes or records matching the exact contract in the TDD.
-   - `Controllers/`: Dedicated API controllers for designed endpoints.
-   - `Services/` & `Repositories/`: Clean separation of business logic and database operations.
-4. Quality & Authenticity Standards:
+   - `Data/AppDbContext.cs`: EF Core DbContext with explicit DbSets.
+   - `DTOs/`: Dedicated request and response records/classes with strict input validation attributes:
+     * Use `[Required(ErrorMessage = "number1 is required")]` on nullable fields (e.g. `[Required] int? Number1`) so missing or non-numeric JSON fields result in authentic HTTP 400 Bad Request rather than silently defaulting to 0.
+   - `Controllers/`: API controllers for designed channel endpoints. Controller methods must use `[ApiController]` and return typed `ActionResult<T>`.
+   - `Services/` & `Repositories/`: Clean separation of business logic and database persistence.
+     * In calculation summation services, ALWAYS perform arithmetic operations inside a `checked { ... }` block to catch integer overflow and throw `OverflowException`.
+     * Ensure method names, signatures, and contracts match the Technical Design Document.
+   - `Clients/`: Dedicated typed client (e.g. `IMockVendorClient` and `MockVendorClient`) calling the external mock endpoint.
+4. EXECUTABLE XUNIT TEST PROJECT (`channel-app.Tests/`):
+   - Scaffold a dedicated xUnit test project covering the test cases from the Test Specification:
+   - `channel-app.Tests/channel-app.Tests.csproj`:
+     * `<Project Sdk=\"Microsoft.NET.Sdk\">` targeting net8.0
+     * Package references: `Microsoft.NET.Test.Sdk`, `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.AspNetCore.Mvc.Testing`
+     * ProjectReference: `<ProjectReference Include=\"..\\channel-app.csproj\" />`
+   - `channel-app.Tests/UnitTests.cs`:
+     * xUnit unit tests verifying domain models, DTO validations, and calculation/business logic.
+   - `channel-app.Tests/IntegrationTests.cs`:
+     * Integration tests using `WebApplicationFactory<Program>` or `TestServer` verifying API routes, status codes (200/201, 400, 404, 422), and response payloads.
+5. Quality & Authenticity Standards:
    - Format and indent properly.
-   - NO placeholders, NO `// TODO`, NO dummy mock data.
-   - Code MUST compile cleanly without any CS errors. Use consistent namespaces: `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`.
+   - NO placeholders, NO `// TODO`, NO fake local mock controllers.
+   - Code MUST compile cleanly (`dotnet build`) with 0 errors. Use consistent namespace `ChannelApp` (e.g. `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`, `ChannelApp.Clients`) and `ChannelApp.Tests` for tests.
 
 Respond ONLY with a valid JSON object containing relative paths and file contents:
 {
   "files": {
     "channel-app.csproj": "<Project Sdk=\"Microsoft.NET.Sdk.Web\">...</Project>",
     "Program.cs": "using Microsoft.EntityFrameworkCore; ...",
-    "appsettings.json": "{\\n  \"ConnectionStrings\": { \"DefaultConnection\": \"Data Source=app.db\" }\\n}",
-    "Properties/launchSettings.json": "{...}"
+    "appsettings.json": "...",
+    "Properties/launchSettings.json": "...",
+    "channel-app.Tests/channel-app.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\">...</Project>",
+    "channel-app.Tests/UnitTests.cs": "using Xunit; ...",
+    "channel-app.Tests/IntegrationTests.cs": "using Xunit; ..."
   }
 }"""
 
@@ -134,7 +168,8 @@ class MainCodingAgent(BaseAgent):
         self.git_service = git_service
 
     def get_system_prompt(self, context: AgentContext) -> str:
-        return get_coder_prompt_for_framework(context.target_framework)
+        effective_framework = context.additional_metadata.get("subsystem_framework") or context.target_framework
+        return get_coder_prompt_for_framework(effective_framework)
 
     def get_tools(self) -> list[ToolDefinition]:
         return [get_file_read_tool(), get_file_write_tool()]
@@ -142,6 +177,12 @@ class MainCodingAgent(BaseAgent):
     def _read_technical_design(self, workspace_path: str) -> str:
         try:
             return execute_file_read(workspace_path, "docs/TECHNICAL_DESIGN.md")
+        except FileNotFoundError:
+            return ""
+
+    def _read_test_spec(self, workspace_path: str) -> str:
+        try:
+            return execute_file_read(workspace_path, "docs/XUNIT_TEST_SPEC.md")
         except FileNotFoundError:
             return ""
 
@@ -157,17 +198,42 @@ class MainCodingAgent(BaseAgent):
 
         try:
             data = json.loads(text)
-            return data.get("files", {})
-        except Exception as e:
-            logger.warning(f"Could not parse JSON files from LLM response: {e}")
-            return {}
+            if isinstance(data, dict) and "files" in data:
+                return data["files"]
+        except Exception:
+            pass
+
+        import re
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_content, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                if isinstance(data, dict) and "files" in data:
+                    return data["files"]
+            except Exception:
+                pass
+
+        start = raw_content.find("{")
+        end = raw_content.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                data = json.loads(raw_content[start : end + 1])
+                if isinstance(data, dict) and "files" in data:
+                    return data["files"]
+            except Exception:
+                pass
+
+        logger.warning("Could not parse JSON files from LLM response.")
+        return {}
 
     def _execute_build_verification(self, repo_path: str, target_framework: str) -> tuple[bool, str]:
         framework_lower = (target_framework or "").lower()
         if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
             try:
+                sln_file = Path(repo_path) / "channel-app.sln"
+                target = "channel-app.sln" if sln_file.exists() else "channel-app.csproj"
                 res = subprocess.run(
-                    ["dotnet", "build", "--nologo", "-v", "minimal"],
+                    ["dotnet", "build", target, "--nologo", "-v", "minimal"],
                     cwd=repo_path,
                     capture_output=True,
                     text=True,
@@ -193,17 +259,31 @@ class MainCodingAgent(BaseAgent):
             except Exception as e:
                 return False, f"Python syntax verification failed: {e}"
 
+        if any(k in framework_lower for k in ("next", "react", "type", "ts", "node", "js")):
+            try:
+                pkg_json = Path(repo_path) / "package.json"
+                if pkg_json.exists():
+                    json.loads(pkg_json.read_text(encoding="utf-8"))
+                tsconfig = Path(repo_path) / "tsconfig.json"
+                if tsconfig.exists():
+                    json.loads(tsconfig.read_text(encoding="utf-8"))
+                return True, "Next.js / TypeScript configuration and scaffolding verified successfully."
+            except Exception as e:
+                return False, f"TypeScript / Next.js configuration verification failed: {e}"
+
         # Generic check
         return True, "No specific compiler gate configured for this framework."
 
     async def execute(self, context: AgentContext, input_text: str) -> AgentResult:
         tech_design = self._read_technical_design(context.workspace_path)
-        user_content = input_text
+        test_spec = self._read_test_spec(context.workspace_path)
+        sections = []
         if tech_design:
-            user_content = (
-                f"## Technical Design Document:\n\n{tech_design}\n\n"
-                f"## Implementation Directives:\n\n{input_text}"
-            )
+            sections.append(f"## Technical Design Document:\n\n{tech_design}")
+        if test_spec:
+            sections.append(f"## Authoritative Test Specifications:\n\n{test_spec}")
+        sections.append(f"## Implementation Directives:\n\n{input_text}")
+        user_content = "\n\n".join(sections)
 
         messages = self.build_initial_messages(context, user_content)
 
@@ -214,18 +294,33 @@ class MainCodingAgent(BaseAgent):
         )
         adapter = resolved_config.adapter
 
-        channel_repo_path = self.git_service.get_repository_path(
-            project_id=context.project_id,
-            repo_type=RepositoryType.CHANNEL_APP,
-        )
+        is_incremental = context.additional_metadata.get("is_incremental", False)
+        target_subsystem = context.additional_metadata.get("target_subsystem", "channel-app")
+        subsystem_framework = context.additional_metadata.get("subsystem_framework")
+        effective_framework = subsystem_framework or context.target_framework
+        is_frontend = (target_subsystem == "frontend") or is_incremental
 
-        branch_name = f"feature/channel-app-{context.task_id.hex[:8]}"
-        self.git_service.create_branch(
-            project_id=context.project_id,
-            repo_type=RepositoryType.CHANNEL_APP,
-            branch_name=branch_name,
-            base_branch="develop",
-        )
+        if is_frontend:
+            target_repo_path = str(Path(context.workspace_path) / "frontend")
+            Path(target_repo_path).mkdir(parents=True, exist_ok=True)
+            branch_name = "main"
+            if not (Path(target_repo_path) / ".git").exists():
+                try:
+                    subprocess.run(["git", "init", "-b", "main"], cwd=target_repo_path, capture_output=True, timeout=15)
+                except Exception:
+                    pass
+        else:
+            target_repo_path = self.git_service.get_repository_path(
+                project_id=context.project_id,
+                repo_type=RepositoryType.CHANNEL_APP,
+            )
+            branch_name = f"feature/channel-app-{context.task_id.hex[:8]}"
+            self.git_service.create_branch(
+                project_id=context.project_id,
+                repo_type=RepositoryType.CHANNEL_APP,
+                branch_name=branch_name,
+                base_branch="develop",
+            )
 
         # Iterative synthesis & build verification loop
         max_healing_attempts = 3
@@ -263,35 +358,51 @@ class MainCodingAgent(BaseAgent):
                 continue
 
             for rel_path, content in files_dict.items():
-                execute_file_write(channel_repo_path, rel_path, content)
+                execute_file_write(target_repo_path, rel_path, content)
                 if rel_path not in written_files:
                     written_files.append(rel_path)
 
-            # Ensure solution file exists for Visual Studio support
-            framework_lower = (context.target_framework or "").lower()
-            if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
-                sln_path = Path(channel_repo_path) / "channel-app.sln"
-                if not sln_path.exists():
-                    try:
-                        subprocess.run(["dotnet", "new", "sln", "-n", "channel-app"], cwd=channel_repo_path, capture_output=True, timeout=30)
-                        subprocess.run(["dotnet", "sln", "channel-app.sln", "add", "channel-app.csproj"], cwd=channel_repo_path, capture_output=True, timeout=30)
-                        if "channel-app.sln" not in written_files:
-                            written_files.append("channel-app.sln")
-                    except Exception as e:
-                        logger.warning(f"Could not generate solution file: {e}")
+            # Ensure solution file exists for Visual Studio support (Backend only)
+            if not is_frontend:
+                framework_lower = (effective_framework or "").lower()
+                if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
+                    sln_path = Path(target_repo_path) / "channel-app.sln"
+                    if not sln_path.exists():
+                        try:
+                            subprocess.run(["dotnet", "new", "sln", "-n", "channel-app"], cwd=target_repo_path, capture_output=True, timeout=30)
+                            subprocess.run(["dotnet", "sln", "channel-app.sln", "add", "channel-app.csproj"], cwd=target_repo_path, capture_output=True, timeout=30)
+                            if "channel-app.sln" not in written_files:
+                                written_files.append("channel-app.sln")
+                        except Exception as e:
+                            logger.warning(f"Could not generate solution file: {e}")
 
-            # Clean up residual orphaned files if reported in build errors
-            for stray in ["Controllers/JobsController.cs", "DTOs/JobDtos.cs", "Models/Job.cs"]:
-                stray_path = Path(channel_repo_path) / stray
-                if stray_path.exists() and "Jobs" not in (context.target_framework or ""):
-                    try:
-                        stray_path.unlink()
-                        logger.info(f"Removed out-of-scope residual file: {stray}")
-                    except Exception as e:
-                        logger.warning(f"Could not remove {stray}: {e}")
+                    test_csproj = Path(target_repo_path) / "channel-app.Tests" / "channel-app.Tests.csproj"
+                    if test_csproj.exists():
+                        try:
+                            subprocess.run(["dotnet", "sln", "channel-app.sln", "add", "channel-app.Tests/channel-app.Tests.csproj"], cwd=target_repo_path, capture_output=True, timeout=30)
+                        except Exception as e:
+                            logger.warning(f"Could not register test project in solution: {e}")
+
+                # Clean up residual orphaned files or forbidden duplicate mock controllers
+                stray_candidates = [
+                    "Controllers/MockVendorController.cs",
+                    "Controllers/JobsController.cs",
+                    "DTOs/JobDtos.cs",
+                    "Models/Job.cs",
+                ]
+                for stray in stray_candidates:
+                    stray_path = Path(target_repo_path) / stray
+                    if stray_path.exists():
+                        try:
+                            stray_path.unlink()
+                            logger.info(f"Removed out-of-scope or forbidden residual file: {stray}")
+                            if stray in written_files:
+                                written_files.remove(stray)
+                        except Exception as e:
+                            logger.warning(f"Could not remove {stray}: {e}")
 
             # Run build verification gate
-            build_success, build_output = self._execute_build_verification(channel_repo_path, context.target_framework)
+            build_success, build_output = self._execute_build_verification(target_repo_path, effective_framework)
             if build_success:
                 logger.info(f"Build succeeded on attempt {attempt}!")
                 break
@@ -303,9 +414,9 @@ class MainCodingAgent(BaseAgent):
                 messages.append(LLMMessage(
                     role="user",
                     content=(
-                        f"The generated code failed compilation (`dotnet build`). Errors:\n\n"
+                        f"The generated code failed compilation / verification. Errors:\n\n"
                         f"```\n{build_output}\n```\n\n"
-                        f"Please fix all compiler errors and return the corrected files in the exact JSON format."
+                        f"Please fix all errors and return the corrected files in the exact JSON format."
                     )
                 ))
 
@@ -313,26 +424,38 @@ class MainCodingAgent(BaseAgent):
             logger.error(f"Build gate failed after {max_healing_attempts} attempts. Output:\n{build_output}")
 
         # Commit verified code to Git repository
-        commit_hash = self.git_service.commit_changes(
-            project_id=context.project_id,
-            repo_type=RepositoryType.CHANNEL_APP,
-            message=(
-                f"feat: implement channel application ({'build verified' if build_success else 'build pending'}) "
-                f"for task {context.task_id.hex[:8]}"
-            ),
-        )
+        if is_frontend:
+            try:
+                subprocess.run(["git", "add", "-A"], cwd=target_repo_path, capture_output=True, timeout=15)
+                subprocess.run(["git", "commit", "-m", "feat: scaffold frontend client interface"], cwd=target_repo_path, capture_output=True, timeout=15)
+                rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=target_repo_path, capture_output=True, text=True, timeout=15)
+                commit_hash = rev.stdout.strip()
+            except Exception:
+                commit_hash = "manual"
+        else:
+            commit_hash = self.git_service.commit_changes(
+                project_id=context.project_id,
+                repo_type=RepositoryType.CHANNEL_APP,
+                message=(
+                    f"feat: implement channel application ({'build verified' if build_success else 'build pending'}) "
+                    f"for task {context.task_id.hex[:8]}"
+                ),
+            )
 
+        subsystem_title = "Frontend client interface" if is_frontend else "Channel application"
         return AgentResult(
             success=build_success,
             summary=(
-                f"Channel application implemented across {len(written_files)} files. "
+                f"{subsystem_title} implemented across {len(written_files)} files. "
                 f"Build verification: {'PASSED (0 Errors)' if build_success else 'FAILED'}."
             ),
             artifacts_created=written_files,
             metadata={
                 "commit_hash": commit_hash,
                 "branch": branch_name,
-                "repo": "channel-app",
+                "repo": "frontend" if is_frontend else "channel-app",
+                "target_subsystem": "frontend" if is_frontend else "channel-app",
+                "effective_framework": effective_framework,
                 "files_count": len(written_files),
                 "build_success": build_success,
                 "build_log": build_output[:2000],

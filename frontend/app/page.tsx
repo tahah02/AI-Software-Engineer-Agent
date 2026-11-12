@@ -82,6 +82,10 @@ import {
 
   createProject,
 
+  fetchProjectAgents,
+
+  updateProjectAgents,
+
   startWorkflow,
 
   resolveApproval,
@@ -224,16 +228,26 @@ export default function WorkspacePage() {
 
 
   // Dynamic project agents toggle states
-
   const [agentToggles, setAgentToggles] = useState({
-
     agent2: true,
-
     agent4: true,
-
     agent5: true,
-
   });
+
+  const handleToggleAgent = async (agentKey: "agent2" | "agent4" | "agent5") => {
+    const updated = { ...agentToggles, [agentKey]: !agentToggles[agentKey] };
+    setAgentToggles(updated);
+    if (selectedProject?.id) {
+      await updateProjectAgents(selectedProject.id, updated);
+    }
+  };
+
+  const handleSaveModalToggles = async (newToggles: { agent2: boolean; agent4: boolean; agent5: boolean }) => {
+    setAgentToggles(newToggles);
+    if (selectedProject?.id) {
+      await updateProjectAgents(selectedProject.id, newToggles);
+    }
+  };
 
 
 
@@ -319,6 +333,12 @@ export default function WorkspacePage() {
 
       }
 
+    });
+
+    fetchProjectAgents(selectedProject.id).then((res) => {
+      if (isMounted && res && res.toggles) {
+        setAgentToggles(res.toggles);
+      }
     });
 
     fetchProjectMessages(selectedProject.id).then((data) => {
@@ -1142,7 +1162,7 @@ export default function WorkspacePage() {
                       const name = prompt("Enter project name:", "New Project");
                       if (name) {
                         try {
-                          const p = await createProject(name);
+                          const p = await createProject(name, undefined, undefined, undefined, agentToggles);
                           setProjects((prev) => [p, ...prev]);
                           setSelectedProject(p);
                           setShowProjectMenu(false);
@@ -1275,7 +1295,7 @@ export default function WorkspacePage() {
 
               <button
 
-                onClick={() => setAgentToggles((p) => ({ ...p, agent2: !p.agent2 }))}
+                onClick={() => handleToggleAgent("agent2")}
 
                 className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition ${
 
@@ -1299,7 +1319,7 @@ export default function WorkspacePage() {
 
               <button
 
-                onClick={() => setAgentToggles((p) => ({ ...p, agent4: !p.agent4 }))}
+                onClick={() => handleToggleAgent("agent4")}
 
                 className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition ${
 
@@ -1323,7 +1343,7 @@ export default function WorkspacePage() {
 
               <button
 
-                onClick={() => setAgentToggles((p) => ({ ...p, agent5: !p.agent5 }))}
+                onClick={() => handleToggleAgent("agent5")}
 
                 className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border transition ${
 
@@ -1428,7 +1448,7 @@ export default function WorkspacePage() {
                     const name = prompt("Enter project name:", "My AI Project");
                     if (name) {
                       try {
-                        const p = await createProject(name);
+                        const p = await createProject(name, undefined, undefined, undefined, agentToggles);
                         setProjects((prev) => [p, ...prev]);
                         setSelectedProject(p);
                       } catch (err: any) {
@@ -2680,31 +2700,107 @@ export default function WorkspacePage() {
                   }
 
                   const latestQa = qaMsgs[qaMsgs.length - 1];
+                  const qaText = latestQa.text || "";
+                  const isFailed = qaText.includes("FAILED") || qaText.includes("❌");
+                  const isSkipped = qaText.includes("SKIPPED");
+
+                  const badgeClass = isSkipped
+                    ? "text-slate-400 bg-slate-900 border-slate-700"
+                    : isFailed
+                    ? "text-rose-400 bg-rose-950/60 border-rose-500/30"
+                    : "text-emerald-400 bg-emerald-950/60 border-emerald-500/30";
+                  const badgeText = isSkipped ? "SKIPPED" : isFailed ? "FAILED" : "PASSED";
+                  const borderClass = isFailed ? "border-rose-500/40" : "border-purple-500/40";
+
+                  // Parse test rows if present in markdown table format
+                  const lines = qaText.split("\n");
+                  const tableRows = lines
+                    .filter((l) => l.trim().startsWith("| **"))
+                    .map((l) => {
+                      const cols = l.split("|").map((c) => c.trim()).filter(Boolean);
+                      return {
+                        id: cols[0]?.replace(/\*\*/g, "") || "",
+                        route: cols[1]?.replace(/`/g, "") || "",
+                        expected: cols[2]?.replace(/`/g, "") || "",
+                        actual: cols[3]?.replace(/`/g, "") || "",
+                        status: cols[4]?.replace(/`/g, "") || "",
+                        details: cols[5] || "",
+                      };
+                    });
+
+                  const summaryLines = lines
+                    .filter((l) => !l.trim().startsWith("|") && !l.trim().startsWith("```") && !l.includes("Test Runner Execution"))
+                    .join("\n")
+                    .trim();
+
+                  const cliLogs = qaText.includes("```text")
+                    ? qaText.split("```text")[1]?.split("```")[0]?.trim()
+                    : "";
 
                   return (
-
-                    <div className="p-3 rounded-xl bg-[#101422] border border-purple-500/40 space-y-2 text-[12px]">
-
+                    <div className={`p-3 rounded-xl bg-[#101422] border ${borderClass} space-y-3 text-[12px]`}>
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-
                         <span className="font-semibold text-purple-400 flex items-center gap-1.5">
-
-                          <FlaskConical className="h-4 w-4" /> Agent 4: Independent QA Report
-
+                          <FlaskConical className="h-4 w-4" /> Agent 4: Independent QA Test Audit
                         </span>
-
-                        <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">PASSED</span>
-
+                        <span className={`text-[10px] border px-2 py-0.5 rounded-full ${badgeClass}`}>{badgeText}</span>
                       </div>
 
-                      <pre className="font-sans text-slate-200 whitespace-pre-wrap leading-relaxed text-[12px]">
+                      {summaryLines && (
+                        <div className="text-slate-300 text-[11.5px] leading-relaxed whitespace-pre-wrap">
+                          {summaryLines}
+                        </div>
+                      )}
 
-                        {latestQa.text}
+                      {tableRows.length > 0 && (
+                        <div className="border border-slate-800 rounded-lg overflow-hidden">
+                          <div className="text-[10.5px] font-semibold text-slate-400 bg-slate-900/80 px-2.5 py-1.5 border-b border-slate-800">
+                            Evaluated Black-Box Test Cases ({tableRows.length} Tests)
+                          </div>
+                          <div className="max-h-64 overflow-y-auto divide-y divide-slate-800/60 text-[11px]">
+                            {tableRows.map((r, i) => (
+                              <div key={i} className="p-2 hover:bg-slate-850/40 flex flex-col gap-1 transition">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-bold text-cyan-400">{r.id}</span>
+                                    <span className="font-mono text-slate-300">{r.route}</span>
+                                  </div>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                      r.status === "PASSED"
+                                        ? "bg-emerald-950 text-emerald-400 border border-emerald-500/30"
+                                        : "bg-rose-950 text-rose-400 border border-rose-500/30"
+                                    }`}
+                                  >
+                                    {r.status} (HTTP {r.actual})
+                                  </span>
+                                </div>
+                                {r.details && (
+                                  <div className="text-slate-400 text-[10.5px] pl-1">
+                                    {r.details}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
-                      </pre>
+                      {cliLogs && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] text-slate-400 font-mono">Console Test Output:</div>
+                          <pre className="bg-[#080b12] p-2 rounded-lg font-mono text-[10.5px] text-emerald-400 border border-slate-800 overflow-x-auto whitespace-pre-wrap leading-tight max-h-40">
+                            {cliLogs}
+                          </pre>
+                        </div>
+                      )}
 
+                      {tableRows.length === 0 && !cliLogs && (
+                        <pre className="font-sans text-slate-200 whitespace-pre-wrap leading-relaxed text-[12px]">
+                          {latestQa.text}
+                        </pre>
+                      )}
                     </div>
-
                   );
 
                 })()
@@ -2732,10 +2828,21 @@ export default function WorkspacePage() {
                   }
 
                   const latestSec = secMsgs[secMsgs.length - 1];
+                  const secText = latestSec.text || "";
+                  const hasVulns = secText.includes("CRITICAL") || secText.includes("HIGH") || secText.includes("VULNERABILITY");
+                  const isSecSkipped = secText.includes("SKIPPED") || secText.includes("Not Scanned");
+
+                  const secBadgeClass = isSecSkipped
+                    ? "text-slate-400 bg-slate-900 border-slate-700"
+                    : hasVulns
+                    ? "text-rose-400 bg-rose-950/60 border-rose-500/30"
+                    : "text-emerald-400 bg-emerald-950/60 border-emerald-500/30";
+                  const secBadgeText = isSecSkipped ? "SKIPPED" : hasVulns ? "VULNERABILITIES DETECTED" : "VERIFIED CLEAN";
+                  const secBorderClass = hasVulns ? "border-rose-500/40" : "border-amber-500/40";
 
                   return (
 
-                    <div className="p-3 rounded-xl bg-[#101422] border border-amber-500/40 space-y-2 text-[12px]">
+                    <div className={`p-3 rounded-xl bg-[#101422] border ${secBorderClass} space-y-2 text-[12px]`}>
 
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
 
@@ -2745,7 +2852,7 @@ export default function WorkspacePage() {
 
                         </span>
 
-                        <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">VERIFIED</span>
+                        <span className={`text-[10px] border px-2 py-0.5 rounded-full ${secBadgeClass}`}>{secBadgeText}</span>
 
                       </div>
 
@@ -2781,7 +2888,7 @@ export default function WorkspacePage() {
 
         agentToggles={agentToggles}
 
-        onSave={(newToggles) => setAgentToggles(newToggles)}
+        onSave={(newToggles) => handleSaveModalToggles(newToggles)}
 
       />
 
