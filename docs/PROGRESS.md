@@ -1154,3 +1154,16 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Verified `dotnet build` succeeds on channel-app with 0 errors.
   - Verified backend health check returns 200 OK.
+
+### [2026-11-14] Step 31: Elimination of Dead Fallback Trap & Progressive Backoff for 503 High Demand Spikes (Completed)
+- **Problem**:
+  - When Google Gemini returned transient 503 status codes ("This model is currently experiencing high demand"), the system failed over to the configured fallback model `gemini-3-flash-preview`.
+  - Because `gemini-3-flash-preview` had already exhausted its 20 requests/day experimental quota, this failover triggered a 429 RESOURCE_EXHAUSTED error.
+- **Changes Implemented**:
+  - `config/llm_config.json`: Removed `gemini-3-flash-preview` from fallback configurations for all agents (`fallback_model: null`), preventing unwanted failovers to the exhausted model.
+  - `src/api/routes/projects.py`: Updated fallback defaults in `get_default_agent_specs` to `gemini-3.5-flash-lite`.
+  - `src/infrastructure/llm/litellm_adapter.py`: Added progressive backoff (up to 4 attempts) for transient Google server demand spikes (`503`, `high demand`, `spikes in demand`), allowing transient Google spikes to self-resolve without failing the workflow.
+  - Reset database cleanly and restarted backend server daemon on port 8081.
+- **Verification**:
+  - Verified `gemini-3.5-flash-lite` direct connection returns 200 in ~1060ms.
+  - Verified backend health check returns 200 OK.
