@@ -82,15 +82,18 @@ Your responsibility:
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
      * Configures typed `HttpClient` for external vendor service:
        `builder.Services.AddHttpClient<IMockVendorClient, MockVendorClient>(c => { c.BaseAddress = new Uri(builder.Configuration["MockVendor:BaseUrl"] ?? "http://localhost:5100"); c.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("MockVendor:TimeoutSeconds", 10)); });`
-     * Configures comprehensive global exception handling middleware that translates:
-       - Upstream external service timeouts (`TaskCanceledException`, `TimeoutException`) -> HTTP 504 Gateway Timeout.
-       - Upstream external service connection failures (`HttpRequestException`, `SocketException`) -> HTTP 502 Bad Gateway.
-       - Database unavailability / `SqliteException` -> HTTP 503 Service Unavailable.
-       - Arithmetic overflow (`OverflowException` from `checked` summation) -> HTTP 422 Unprocessable Entity.
-       - Missing records (`KeyNotFoundException`) -> HTTP 404 Not Found.
-       - Input validation errors -> HTTP 400 Bad Request.
+     * Configures comprehensive global exception handling middleware that translates exceptions using authentic ASP.NET Core StatusCodes constants:
+       - Upstream timeouts (`TaskCanceledException`, `TimeoutException`) -> StatusCodes.Status504GatewayTimeout (HTTP 504).
+       - Upstream connection failures (`HttpRequestException`, `SocketException`) -> StatusCodes.Status502BadGateway (HTTP 502).
+       - Database unavailability / `SqliteException` -> StatusCodes.Status503ServiceUnavailable (HTTP 503).
+       - Arithmetic overflow -> StatusCodes.Status422UnprocessableEntity (HTTP 422).
+       - Missing records (`KeyNotFoundException`) -> StatusCodes.Status404NotFound (HTTP 404).
+       - Duplicate records / conflict -> StatusCodes.Status409Conflict (HTTP 409).
+       - Input validation / bad request -> StatusCodes.Status400BadRequest (HTTP 400).
+       (MANDATORY: NEVER invent non-existent status names like Status400BadGateway).
      * Health Checks: `builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();` mapped to `/health`.
-     * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, use OpenApiReference with Type = ReferenceType.SecurityScheme (do NOT use ReferenceType.Security).
+     * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, configure security requirement using OpenApiSecurityScheme:
+       `c.AddSecurityRequirement(new OpenApiSecurityRequirement { { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() } });`
      * Middleware & Security:
        - If implementing custom `IAuthorizationMiddlewareResultHandler`, use boolean properties `authorizeResult.Challenged` (NEVER use `.Challenge` as it is a method group) and `authorizeResult.Forbidden`.
        - If configuring Rate Limiting in `Program.cs`, ensure `using Microsoft.AspNetCore.RateLimiting;` is included at the top of the file.
@@ -230,6 +233,20 @@ class MainCodingAgent(BaseAgent):
             except Exception:
                 pass
 
+        # Resilient fallback: regex extraction for partial or unclosed JSON
+        extracted = {}
+        pattern = r'"([^"\\\n]+\.[a-zA-Z0-9]+)"\s*:\s*"((?:[^"\\]|\\.)*)"'
+        for m in re.finditer(pattern, raw_content):
+            file_path = m.group(1)
+            try:
+                content = json.loads(f'"{m.group(2)}"')
+                extracted[file_path] = content
+            except Exception:
+                pass
+        if extracted:
+            logger.info(f"Resilient regex fallback parser successfully extracted {len(extracted)} files.")
+            return extracted
+
         logger.warning("Could not parse JSON files from LLM response.")
         return {}
 
@@ -344,7 +361,7 @@ class MainCodingAgent(BaseAgent):
                 messages=messages,
                 response_schema={"type": "json_object"},
                 temperature=0.1,
-                max_tokens=8000,
+                max_tokens=24000,
             )
 
             response = await adapter.complete(request)
