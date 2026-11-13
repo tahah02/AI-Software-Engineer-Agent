@@ -1140,3 +1140,17 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Direct completion test via LiteLLM completed in 1.4s with 0 errors.
   - Live backend health check returned 200 OK.
+
+### [2026-11-14] Step 30: 24k Output Token Expansion, Resilient Regex Fallback Parser, and StatusCodes/Swagger Guard (Completed)
+- **Problem**:
+  - `max_tokens` was hardcoded to 8,000 in `main_coder.py`. Generating complete 20+ file C# ASP.NET Core solutions exceeded this threshold (cutting off at 7,996 tokens), corrupting JSON outputs with truncation and failing `_parse_files_from_response` on all attempts.
+  - LLM hallucinated `StatusCodes.Status400BadGateway` (which does not exist in ASP.NET Core) and malformed `OpenApiSecurityRequirement` dictionary keys in `Program.cs`.
+- **Changes Implemented**:
+  - `src/application/agents/main_coder.py`:
+    - Increased `max_tokens` from 8,000 to **24,000** to allow complete multi-file solutions without truncation.
+    - Added resilient regex fallback extractor to `_parse_files_from_response` to salvage valid files from partial or unclosed JSON.
+    - Updated C# prompt to enforce authentic StatusCodes (`Status400BadRequest`, `Status502BadGateway`, `Status504GatewayTimeout`, etc.) and mandated exact 2-line `OpenApiSecurityRequirement` dictionary syntax.
+  - Reset SQLite database cleanly and restarted backend daemon on port 8081.
+- **Verification**:
+  - Verified `dotnet build` succeeds on channel-app with 0 errors.
+  - Verified backend health check returns 200 OK.
