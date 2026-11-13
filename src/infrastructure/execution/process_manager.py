@@ -209,7 +209,24 @@ class ProjectProcessManager:
             t = threading.Thread(target=_log_reader, args=(proc, info.log_lines), daemon=True)
             t.start()
 
-            logger.info(f"Project {p_id} ({subsystem}) started on port {port} (PID: {proc.pid})")
+            # Poll briefly for socket readiness while verifying the process didn't crash on spawn
+            start_wait = time.time()
+            while time.time() - start_wait < 2.0:
+                if proc.poll() is not None:
+                    err_logs = list(info.log_lines)
+                    err_msg = "\n".join(err_logs[-10:]) if err_logs else f"Exit code {proc.returncode}"
+                    info.status = "STOPPED"
+                    raise RuntimeError(f"Service exited prematurely:\n{err_msg}")
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(0.2)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            break
+                except Exception:
+                    pass
+                time.sleep(0.2)
+
+            logger.info(f"Project {p_id} ({subsystem}) ready on port {port} (PID: {proc.pid})")
             return {
                 "status": "RUNNING",
                 "message": f"Project {subsystem} launched successfully.",

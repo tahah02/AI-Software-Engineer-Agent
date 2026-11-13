@@ -212,14 +212,8 @@ def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
     ensure_project_agent_configs(project.id, db, req.agent_toggles)
 
     git_service = GitService(db=db)
-
     channel_dir = git_service.get_repository_path(project.id, RepositoryType.CHANNEL_APP)
-
     Path(channel_dir).mkdir(parents=True, exist_ok=True)
-
-    git_service.initialize_repository(
-        project.id, RepositoryType.CHANNEL_APP, target_framework=project.target_framework
-    )
 
     return ProjectItem(
         id=project.id,
@@ -227,48 +221,63 @@ def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
         description=project.description,
         target_framework=project.target_framework,
         status=project.status,
-        current_branch="develop",
+        current_branch=None,
     )
 
 
 @router.get("/{project_id}/branches")
 def get_project_branches(project_id: uuid.UUID, db: Session = Depends(get_db)):
-
     project = db.query(ProjectORM).filter_by(id=project_id).first()
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     git_service = GitService(db=db)
+    channel_path = Path(git_service.get_repository_path(project.id, RepositoryType.CHANNEL_APP))
+    if not (channel_path / ".git").exists():
+        return {
+            "project_id": str(project.id),
+            "branches": [],
+            "current_branch": None,
+        }
 
-    branches = git_service.get_all_branches(project.id, RepositoryType.CHANNEL_APP)
+    raw_branches = git_service.get_all_branches(project.id, RepositoryType.CHANNEL_APP)
+    # Filter out internal ephemeral agent scratch branches
+    clean_branches = [
+        b for b in raw_branches
+        if not b.startswith("feature/channel-app-") and not b.startswith("feature/mock-apis-")
+    ]
 
     current_branch = git_service.get_current_branch(project.id, RepositoryType.CHANNEL_APP)
 
-    # If the repository was left on an internal agent feature branch, auto-realign to primary develop branch
-    if current_branch and current_branch.startswith("feature/") and "develop" in branches:
+    if current_branch and current_branch.startswith("feature/") and "develop" in clean_branches:
         try:
             git_service.checkout_branch(project.id, RepositoryType.CHANNEL_APP, "develop")
             current_branch = "develop"
         except Exception:
             pass
+    elif current_branch and current_branch not in clean_branches:
+        current_branch = clean_branches[0] if clean_branches else None
 
     return {
         "project_id": str(project.id),
-        "branches": branches,
-        "current_branch": current_branch or "develop",
+        "branches": clean_branches,
+        "current_branch": current_branch if clean_branches else None,
     }
 
 
 @router.get("/{project_id}/diff")
 def get_project_diff(project_id: uuid.UUID, db: Session = Depends(get_db)):
-
     project = db.query(ProjectORM).filter_by(id=project_id).first()
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
     git_service = GitService(db=db)
+    channel_path = Path(git_service.get_repository_path(project.id, RepositoryType.CHANNEL_APP))
+    if not (channel_path / ".git").exists():
+        return {
+            "project_id": str(project.id),
+            "diff": "",
+        }
 
     diff = git_service.get_diff(project.id, RepositoryType.CHANNEL_APP)
 

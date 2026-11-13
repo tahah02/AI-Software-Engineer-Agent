@@ -385,19 +385,17 @@ export default function WorkspacePage() {
     });
 
     fetchProjectBranches(selectedProject.id).then((bData) => {
-
-      if (isMounted && bData && bData.branches && bData.branches.length > 0) {
-
-        setAvailableBranches(bData.branches);
-
-        if (bData.current_branch) {
-
-          setSelectedProject((prev) => prev ? { ...prev, current_branch: bData.current_branch || undefined } : prev);
-
+      if (isMounted) {
+        if (bData && bData.branches && bData.branches.length > 0) {
+          setAvailableBranches(bData.branches);
+          if (bData.current_branch) {
+            setSelectedProject((prev) => prev ? { ...prev, current_branch: bData.current_branch || undefined } : prev);
+          }
+        } else {
+          setAvailableBranches([]);
+          setSelectedProject((prev) => prev ? { ...prev, current_branch: undefined } : prev);
         }
-
       }
-
     });
 
     fetchProjectAgents(selectedProject.id).then((res) => {
@@ -1260,93 +1258,57 @@ export default function WorkspacePage() {
 
             {/* Branch Selector Badge & Dropdown */}
 
-            <div className="relative">
+            {availableBranches.length > 0 && selectedProject?.current_branch ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBranchMenu((p) => !p);
+                    setShowProjectMenu(false);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#131926] border border-slate-700/80 hover:border-slate-600 text-slate-300 transition text-[12px]"
+                >
+                  <GitBranch className="h-3.5 w-3.5 text-purple-400" />
+                  <span>{selectedProject.current_branch}</span>
+                  <ChevronDown className="h-3 w-3 text-slate-400" />
+                </button>
 
-              <button
-
-                type="button"
-
-                onClick={() => {
-
-                  setShowBranchMenu((p) => !p);
-
-                  setShowProjectMenu(false);
-
-                }}
-
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#131926] border border-slate-700/80 hover:border-slate-600 text-slate-300 transition text-[12px]"
-
-              >
-
-                <GitBranch className="h-3.5 w-3.5 text-purple-400" />
-
-                <span>{selectedProject?.current_branch || (selectedProject ? "develop" : "no branch")}</span>
-
-                <ChevronDown className="h-3 w-3 text-slate-400" />
-
-              </button>
-
-
-
-              {showBranchMenu && (
-
-                <div className="absolute top-full left-0 mt-1.5 w-48 bg-[#0e121d] border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in duration-150">
-
-                  <div className="px-2 py-1 text-[10px] uppercase font-semibold text-slate-500 border-b border-slate-800 mb-1">
-
-                    Git Branches
-
+                {showBranchMenu && (
+                  <div className="absolute top-full left-0 mt-1.5 w-48 bg-[#0e121d] border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 animate-in fade-in duration-150">
+                    <div className="px-2 py-1 text-[10px] uppercase font-semibold text-slate-500 border-b border-slate-800 mb-1">
+                      Git Branches
+                    </div>
+                    {availableBranches.map((br) => (
+                      <button
+                        key={br}
+                        type="button"
+                        onClick={() => {
+                          if (selectedProject) {
+                            setSelectedProject({ ...selectedProject, current_branch: br });
+                          }
+                          setShowBranchMenu(false);
+                        }}
+                        className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-[11.5px] transition ${
+                          selectedProject.current_branch === br
+                            ? "bg-purple-900/30 text-purple-300 border border-purple-500/30"
+                            : "hover:bg-slate-800/60 text-slate-300"
+                        }`}
+                      >
+                        <span className="font-mono truncate">{br}</span>
+                        {selectedProject.current_branch === br && (
+                          <Check className="h-3 w-3 text-purple-400" />
+                        )}
+                      </button>
+                    ))}
                   </div>
-
-                  {availableBranches.map((br) => (
-
-                    <button
-
-                      key={br}
-
-                      type="button"
-
-                      onClick={() => {
-
-                        if (selectedProject) {
-
-                          setSelectedProject({ ...selectedProject, current_branch: br });
-
-                        }
-
-                        setShowBranchMenu(false);
-
-                      }}
-
-                      className={`w-full flex items-center justify-between p-2 rounded-lg text-left text-[11.5px] transition ${
-
-                        (selectedProject?.current_branch || "develop") === br
-
-                          ? "bg-purple-900/30 text-purple-300 border border-purple-500/30"
-
-                          : "hover:bg-slate-800/60 text-slate-300"
-
-                      }`}
-
-                    >
-
-                      <span className="font-mono truncate">{br}</span>
-
-                      {(selectedProject?.current_branch || "develop") === br && (
-
-                        <Check className="h-3 w-3 text-purple-400" />
-
-                      )}
-
-                    </button>
-
-                  ))}
-
-                </div>
-
-              )}
-
-            </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#131926]/40 border border-slate-800/80 text-slate-500 text-[12px] cursor-default select-none" title="No Git repository initialized for this project">
+                <GitBranch className="h-3.5 w-3.5 text-slate-600" />
+                <span>no repository</span>
+              </div>
+            )}
 
           </div>
 
@@ -2660,8 +2622,10 @@ export default function WorkspacePage() {
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 text-[11.5px]">
 
                     <GitBranch className="h-8 w-8 text-slate-600 mb-2" />
-
-                    No code diff available yet.<br />When Agent 3 implements code, git diffs will appear here.
+                    No code diff available yet.<br />
+                    {availableBranches.length > 0
+                      ? "When changes are committed against the base branch, diffs will appear here."
+                      : "No Git repository is initialized for this project."}
 
                   </div>
 

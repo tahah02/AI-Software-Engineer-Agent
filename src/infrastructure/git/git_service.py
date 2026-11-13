@@ -19,12 +19,16 @@ from src.infrastructure.db.models import GitRepositoryORM, GitReleaseManifestORM
 from src.ports.git_service import IGitService
 
 GITIGNORE_TEMPLATES: dict[str, str] = {
-    "python": ("__pycache__/\n*.py[cod]\n*$py.class\n.env\n.venv/\nenv/\n*.log\n.pytest_cache/\n"),
-    "csharp": ("bin/\nobj/\n*.user\n*.suo\n.vs/\n*.log\n"),
-    "typescript": (
-        "node_modules/\ndist/\n.next/\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\n.env\n"
+    "python": (
+        "__pycache__/\n*.py[cod]\n*$py.class\n.env\n.venv/\nenv/\n*.log\n*.db\n*.sqlite\n*.sqlite3\n.pytest_cache/\n"
     ),
-    "generic": (".env\n*.log\n.DS_Store\nThumbs.db\n"),
+    "csharp": (
+        "[Bb]in/\n[Oo]bj/\n*.user\n*.suo\n.vs/\n*.log\n*.db\n*.db-shm\n*.db-wal\n*.sqlite\n*.sqlite3\n*.dll\n*.exe\n*.pdb\n*.cache\n*.cache.json\n.env\n"
+    ),
+    "typescript": (
+        "node_modules/\ndist/\n.next/\nnpm-debug.log*\nyarn-debug.log*\nyarn-error.log*\n.env\n*.log\n"
+    ),
+    "generic": (".env\n*.log\n.DS_Store\nThumbs.db\n*.db\n"),
 }
 
 
@@ -432,57 +436,60 @@ class GitService(IGitService):
             }
 
     def get_diff(self, project_id: uuid.UUID, repo_type: RepositoryType | str) -> str:
-
         repo_path = Path(self.get_repository_path(project_id, repo_type))
-
         if not (repo_path / ".git").exists():
             return ""
 
+        exclude_args = [
+            ":(exclude)bin",
+            ":(exclude)obj",
+            ":(exclude)*.dll",
+            ":(exclude)*.exe",
+            ":(exclude)*.pdb",
+            ":(exclude)*.db",
+            ":(exclude)*.sqlite",
+            ":(exclude)*.cache*",
+            ":(exclude)*.pyc",
+            ":(exclude)__pycache__",
+        ]
+
         try:
-            res = self._run_git(repo_path, ["diff", "HEAD~1", "HEAD"])
-
+            res = self._run_git(repo_path, ["diff", "HEAD~1", "HEAD", "--", ".", *exclude_args])
             if not res.stdout.strip():
-                res = self._run_git(repo_path, ["diff"])
+                res = self._run_git(repo_path, ["diff", "--", ".", *exclude_args])
 
-            return res.stdout
-
+            clean_lines = [
+                line for line in res.stdout.splitlines()
+                if not line.startswith("Binary files ")
+            ]
+            return "\n".join(clean_lines).strip()
         except Exception:
             return ""
 
     def get_all_branches(self, project_id: uuid.UUID, repo_type: RepositoryType | str) -> list[str]:
-
         repo_path = Path(self.get_repository_path(project_id, repo_type))
-
         if not (repo_path / ".git").exists():
-            return ["develop"]
+            return []
 
         try:
             res = self._run_git(repo_path, ["branch", "--list"])
-
             branches = [
                 b.strip().lstrip("* ").strip() for b in res.stdout.splitlines() if b.strip()
             ]
-
-            return branches if branches else ["develop"]
-
+            return branches
         except Exception:
-            return ["develop"]
+            return []
 
     def get_current_branch(
         self, project_id: uuid.UUID, repo_type: RepositoryType | str
     ) -> str | None:
-
         repo_path = Path(self.get_repository_path(project_id, repo_type))
-
         if not (repo_path / ".git").exists():
-            return "develop"
+            return None
 
         try:
             res = self._run_git(repo_path, ["branch", "--show-current"])
-
             cur = res.stdout.strip()
-
-            return cur if cur else "develop"
-
+            return cur if cur else None
         except Exception:
-            return "develop"
+            return None

@@ -1074,3 +1074,29 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - TypeScript validation: `.\frontend\node_modules\.bin\tsc.cmd --noEmit -p frontend/tsconfig.json` — **0 errors (100% SUCCESS)**.
   - Live Browser Inspection: Verified on `http://localhost:8080` via browser subagent. Confirmed button visibility, styling, and interactivity. Screenshot: `final_step_10.png`.
+
+### [2026-11-13] Step 26: Elimination of Forced Git Initialization, Binary Diff Filtering & Clean UI Branch Controls (Completed)
+- **Problem**:
+  - Newly created projects automatically ran `git init` behind the scenes and hardcoded `["develop"]` fallback branches even when users had never configured or initialized Git.
+  - Internal agent task isolation branches (`feature/channel-app-<task_id>`) leaked into the user's branch selection dropdown.
+  - Compiled .NET binaries (`bin/`, `obj/`, `.dll`, `.exe`, `.pdb`, `cache.json`) were tracked by Git due to outdated `.gitignore` templates, polluting the Code Diff tab with pages of binary diffs.
+- **Changes Implemented**:
+  - `src/api/routes/projects.py`:
+    - Removed eager `git_service.initialize_repository` from `create_project`. Newly created projects start with `current_branch=None` and no background `.git` folder.
+    - `get_project_branches`: Filters out internal agent scratch branches (`feature/channel-app-*` and `feature/mock-apis-*`). Returns empty branch list and `current_branch: None` when `.git` is absent, removing all forced fallbacks.
+    - `get_project_diff`: Returns empty diff immediately if `.git` does not exist.
+  - `src/infrastructure/git/git_service.py`:
+    - Updated `GITIGNORE_TEMPLATES` for C# and Python to include comprehensive ignore rules (`[Bb]in/`, `[Oo]bj/`, `*.dll`, `*.exe`, `*.pdb`, `*.db`, `*.sqlite`, `*.cache*`).
+    - Enhanced `get_diff`: Injects Git pathspec exclusions (`:(exclude)bin`, `:(exclude)obj`, `:(exclude)*.dll`, `:(exclude)*.exe`, `:(exclude)*.db`) and strips binary diff noise (`Binary files ... differ`).
+    - Updated `get_all_branches` and `get_current_branch` to return `[]` and `None` when `.git` is absent instead of hardcoded `"develop"`.
+  - `src/infrastructure/execution/process_manager.py`:
+    - Improved TCP socket readiness loop with resilient timeout handling for both quick-binding HTTP services and non-socket processes.
+  - `frontend/app/page.tsx`:
+    - Top Navigation Header: Renders a clean, non-clickable `no repository` badge when no Git repo exists, disabling empty or misleading dropdown menus. Renders branch selector only when genuine branches exist.
+    - Code Diff Tab: Renders clear contextual notice (`No Git repository is initialized for this project`) when Git tracking is inactive.
+  - Workspace:
+    - Cleaned unrequested `.git` from `Student CRUD QA Testing`.
+- **Verification**:
+  - `pytest -k "not test_orchestrator_live_gemini"` — **154 passed, 4 skipped, 0 failed in 84.18s (100% SUCCESS)**.
+  - Verified `GET /api/v1/projects/{id}/branches` returns `branches: []` and `current_branch: null`.
+  - Verified `GET /api/v1/projects/{id}/diff` returns `diff: ""` with zero binary pollution.
