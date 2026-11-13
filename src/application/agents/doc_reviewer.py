@@ -136,6 +136,12 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 f"   - 6. Production Readiness (Rate limiting, structured logging, correlation IDs, health checks)\n"
                 f"   - 7. Git Workflow & Branching Strategy\n"
                 f"   - 8. Requirement Traceability Matrix (Mapping every FR-xx and NFR-xx from the SRS)\n\n"
+                f"3. NORMATIVE IMPLEMENTATION SPECIFICATIONS:\n"
+                f"   - DateTime Persistence: Configure explicit UTC roundtrip conversion for DateTime properties.\n"
+                f"   - Unicode Counting: Validate string length boundaries using Unicode scalar counting (EnumerateRunes().Count()).\n"
+                f"   - Strict JSON Serialization: Configure JsonUnmappedMemberHandling.Disallow and JsonNumberHandling.Strict, rejecting duplicate properties.\n"
+                f"   - RFC 9457 Problem Details: Ensure all error responses including 401/403 emit application/problem+json.\n"
+                f"   - Permissions Claims: Support both scalar string and array permissions claims.\n\n"
                 f"Output pure Markdown only. Do not wrap in JSON."
             )
 
@@ -169,7 +175,7 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 logger.warning(f"Could not track tokens for TDD: {e}")
 
         # Pass 2: Generate exhaustive XUNIT_TEST_SPEC.md in pure Markdown
-        if is_incremental and existing_test_spec:
+        if is_incremental and existing_test_spec and not is_revision:
             prompt_test = (
                 f"You are a Principal Lead QA Architect specializing in client contract verification and integration testing for {subsystem_framework}.\n"
                 f"The project already has an authoritative backend test specification in docs/XUNIT_TEST_SPEC.md:\n\n"
@@ -183,24 +189,41 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 f"Output pure Markdown containing the full document with Section 15 appended."
             )
         else:
+            test_user_content = input_text
+            if existing_test_spec:
+                test_user_content = (
+                    f"## Current Test Specification on Disk:\n\n{existing_test_spec}\n\n"
+                    f"## MANDATORY USER REVISION REQUEST & REQUIRED CORRECTIONS:\n\n{input_text}\n\n"
+                    f"Update and expand docs/XUNIT_TEST_SPEC.md to incorporate every single requested correction. Apply all revisions explicitly."
+                )
+
             prompt_test = (
                 f"You are a Principal Lead QA Architect specializing in testing and contract verification for {framework}.\n"
                 f"Based on the following Technical Design and original SRS, generate the complete, exhaustive Test Specification document (docs/XUNIT_TEST_SPEC.md).\n\n"
                 f"### Technical Design Reference:\n{tech_design[:6000]}\n\n"
-                f"### Authoritative Requirements Specification (SRS) & Test Criteria:\n{input_text}\n\n"
+                f"### Authoritative Requirements Specification (SRS) & Test Directives:\n{test_user_content}\n\n"
                 f"CRITICAL TEST SPECIFICATION RULES:\n"
                 f"1. Treat the SRS and Technical Design as the STRICT SINGLE SOURCE OF TRUTH.\n"
-                f"2. Extract and preserve the EXACT Test Identifiers (e.g. UT-01..UT-xx, IT-01..IT-xx) and functional scope directly from the SRS. If the SRS specifies specific test cases or IDs, you MUST use those exact IDs and descriptions. NEVER inject unrelated test cases or entities from external domains.\n"
+                f"2. Extract and preserve ALL Test Identifiers directly from the SRS: unit tests (UT-01..UT-12), integration tests (IT-01..IT-14), and supplemental/edge compliance tests (EXT-01..EXT-12). NEVER omit, summarize, or inject foreign test cases.\n"
                 f"3. Output pure Markdown only. Do not wrap in JSON.\n"
-                f"4. DO NOT output just an outline, summary table, or placeholder ellipses. You MUST individually write out a dedicated detailed subsection for EVERY SINGLE test case with:\n"
-                f"   - Test ID & Descriptive Name (matching SRS IDs)\n"
-                f"   - Requirement Traced (FR-xx / NFR-xx)\n"
+                f"4. MANDATORY 8-PART DETAILED STRUCTURE FOR EVERY SINGLE TEST:\n"
+                f"   Every test case (UT-01 through UT-12, IT-01 through IT-14, AND EXT-01 through EXT-12) MUST be individually and fully written out using the exact same complete structure:\n"
+                f"   - Test ID & Descriptive Name\n"
+                f"   - Requirement Traced (FR-xx / NFR-xx / AC-xx)\n"
                 f"   - Preconditions & Mock Configuration\n"
                 f"   - Input Payload / Test Data\n"
                 f"   - Execution Steps\n"
                 f"   - Expected Result & Exact Assertions\n"
                 f"   - Database / State Verification\n"
-                f"5. Specify the exact test runner execution command (e.g. `dotnet test --configuration Release` or `pytest`)."
+                f"   - Isolation & Cleanup\n"
+                f"   DO NOT use placeholder bullets, ellipses ('...'), or brief summaries for EXT-01..EXT-12. Write out every single test case fully.\n"
+                f"5. SPECIFIC NORMATIVE EDGE ASSERTIONS:\n"
+                f"   - IT-03 & IT-14: Assert RFC 9457 errors keys use camelCase property names (fullName, email, age, department) and confirm invalid/sensitive values are NOT echoed back.\n"
+                f"   - EXT-01: Test duplicate JSON property names and quoted/fractional age returning 400 Bad Request.\n"
+                f"   - EXT-03 & EXT-04: Assert middleware precedence (413 Payload Too Large enforced before JSON parsing; 415 Unsupported Media Type on authenticated requests).\n"
+                f"   - EXT-07: Test non-BMP Unicode characters (emojis/surrogate pairs) at 1, 2, 100, 101 Unicode scalar boundaries.\n"
+                f"6. Include the complete Requirements Traceability Matrix covering all Functional Requirements (FR), Non-Functional Requirements (NFR), and Acceptance Criteria (AC).\n"
+                f"7. Specify the exact test runner execution command (e.g. `dotnet test --configuration Release` or `pytest`)."
             )
 
         request_test = LLMRequest(
