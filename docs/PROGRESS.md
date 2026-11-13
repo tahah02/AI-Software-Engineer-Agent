@@ -1128,3 +1128,15 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Verified `dotnet build` succeeds with 0 errors and 0 warnings.
   - Restarted backend server cleanly on port 8081 (verified 200 OK).
+
+### [2026-11-13] Step 29: Switch Default Model to gemini-3.5-flash-lite (Completed)
+- **Problem**:
+  - `gemini-3-flash-preview` had a daily limit of 20 requests on Google AI Studio Free Tier, which caused rate limit errors (429 RESOURCE_EXHAUSTED) and 30-second retry stalls on each agent invocation.
+- **Changes Implemented**:
+  - `config/llm_config.json`:
+    - Updated default model to `gemini-3.5-flash-lite` (1,500 requests/day, 1M context window, ~1.4s response time) for all 5 agents.
+    - Set `gemini-3-flash-preview` as fallback.
+  - Wiped SQLite database cleanly and restarted backend server on port 8081.
+- **Verification**:
+  - Direct completion test via LiteLLM completed in 1.4s with 0 errors.
+  - Live backend health check returned 200 OK.
