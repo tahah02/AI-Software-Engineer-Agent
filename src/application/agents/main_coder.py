@@ -119,8 +119,10 @@ Your responsibility:
      * Package references: `Microsoft.NET.Test.Sdk`, `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Moq`
      * ProjectReference: `<ProjectReference Include=\"..\\channel-app.csproj\" />`
    - `channel-app.Tests/UnitTests.cs`:
-     * xUnit unit tests verifying domain models, DTO validations, and calculation/business logic.
+     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using Xunit;`, `using FluentAssertions;`, and `using Moq;` at the very top. (Moq extension methods like `.ReturnsAsync(...)` and FluentAssertions like `.Should()` REQUIRE these namespaces; omitting `using Moq;` causes CS1061).
+     * xUnit unit tests verifying domain models, DTO validations, and business logic.
    - `channel-app.Tests/IntegrationTests.cs`:
+     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using System.Net;`, `using System.Net.Http;`, `using Xunit;`, `using FluentAssertions;`, and `using Microsoft.AspNetCore.Mvc.Testing;` at the very top.
      * Integration tests using `WebApplicationFactory<Program>` or `TestServer` verifying API routes, status codes (200/201, 400, 404, 422), and response payloads.
 5. Quality & Authenticity Standards:
    - Format and indent properly.
