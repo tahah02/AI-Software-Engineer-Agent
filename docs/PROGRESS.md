@@ -1100,3 +1100,18 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - `pytest -k "not test_orchestrator_live_gemini"` — **154 passed, 4 skipped, 0 failed in 84.18s (100% SUCCESS)**.
   - Verified `GET /api/v1/projects/{id}/branches` returns `branches: []` and `current_branch: null`.
   - Verified `GET /api/v1/projects/{id}/diff` returns `diff: ""` with zero binary pollution.
+
+### [2026-11-13] Step 27: C# Agent 3 Template Fixes, Package Completeness & Calculation Hallucination Guard (Completed)
+- **Problem**:
+  - Agent 3 repeatedly failed during build and defect remediation because FluentValidation.AspNetCore, Microsoft.AspNetCore.Authentication.JwtBearer, and System.IdentityModel.Tokens.Jwt were missing from the C# prompt template in main_coder.py.
+  - Nested test project compilation caused CS0246 errors when test packages (FluentAssertions, Moq) were omitted from channel-app.Tests.csproj references.
+  - An outdated prompt directive caused Agent 3 to hallucinate unrequested CalculationService, CalculationRepository, and DbSet<CalculationResult> into student management domains.
+- **Changes Implemented**:
+  - src/application/agents/main_coder.py:
+    - Added FluentValidation.AspNetCore, Microsoft.AspNetCore.Authentication.JwtBearer, and System.IdentityModel.Tokens.Jwt to channel-app.csproj template.
+    - Added FluentAssertions and Moq to channel-app.Tests.csproj template.
+    - Replaced the arithmetic overflow summation directive with a strict scope invariant: Implement ONLY and STRICTLY the exact entities, controllers, services, and repositories specified in docs/TECHNICAL_DESIGN.md. NEVER invent unrequested calculation services, foreign entities, or extraneous repositories.
+  - Reset SQLite database (scripts/wipe_db.py) and restarted backend daemon cleanly on port 8081.
+- **Verification**:
+  - git diff src/application/agents/main_coder.py verified.
+  - Live backend health check: GET http://localhost:8081/api/v1/health -> 200 OK.
