@@ -141,7 +141,8 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 f"   - Unicode Counting: Validate string length boundaries using Unicode scalar counting (EnumerateRunes().Count()).\n"
                 f"   - Strict JSON Serialization: Configure JsonUnmappedMemberHandling.Disallow and JsonNumberHandling.Strict, rejecting duplicate properties.\n"
                 f"   - RFC 9457 Problem Details: Ensure all error responses including 401/403 emit application/problem+json.\n"
-                f"   - Permissions Claims: Support both scalar string and array permissions claims.\n\n"
+                f"   - Permissions Claims: Support both scalar string and array permissions claims.\n"
+                f"   - External Vendor Scope: If the system has NO external third-party vendor APIs, explicitly state: 'Mock Vendor Server: Not Applicable / Excluded (Agent 2 Bypassed)'.\n\n"
                 f"Output pure Markdown only. Do not wrap in JSON."
             )
 

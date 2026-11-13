@@ -71,21 +71,34 @@ class OrchestratorService:
     @staticmethod
     def _inspect_tdd_for_mock_vendor(tdd_text: str) -> bool:
         if not tdd_text:
-            return True
+            return False
         lower = tdd_text.lower()
+        # 1. Explicit skip signals
         if "agent 2" in lower and any(
-            k in lower for k in ("skipped", "not applicable", "bypassed")
+            k in lower for k in ("skipped", "not applicable", "bypassed", "excluded")
         ):
             return False
         if "mock api developer" in lower and any(
-            k in lower for k in ("skipped", "not applicable", "bypassed")
+            k in lower for k in ("skipped", "not applicable", "bypassed", "excluded")
         ):
             return False
-        if "mock vendor server" in lower and any(
-            k in lower for k in ("excluded", "not applicable", "bypassed")
+        if "mock vendor" in lower and any(
+            k in lower for k in ("excluded", "not applicable", "bypassed", "none", "not required", "skipped")
         ):
             return False
-        return True
+
+        # 2. Positive presence check: Does TDD define any third-party vendor APIs or external contracts?
+        vendor_indicators = (
+            "mock vendor",
+            "vendor api",
+            "external vendor",
+            "third-party api",
+            "third party api",
+            "upstream service",
+            "banking core",
+            "payment gateway",
+        )
+        return any(v in lower for v in vendor_indicators)
 
     def _get_enabled_agents(self, project_id: uuid.UUID) -> dict[str, bool]:
 

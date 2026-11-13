@@ -63,12 +63,27 @@ class MockVendorDeveloperAgent(BaseAgent):
 
     @staticmethod
     def is_vendor_mock_skipped(text: str) -> bool:
+        if not text:
+            return True
         lower = text.lower()
-        if "agent 2" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+        if "agent 2" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed", "excluded")):
             return True
-        if "mock api developer" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+        if "mock api developer" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed", "excluded")):
             return True
-        return False
+        if "mock vendor" in lower and any(k in lower for k in ("excluded", "not applicable", "bypassed", "none", "not required", "skipped")):
+            return True
+        vendor_indicators = (
+            "mock vendor",
+            "vendor api",
+            "external vendor",
+            "third-party api",
+            "third party api",
+            "upstream service",
+            "banking core",
+            "payment gateway",
+        )
+        # If no vendor indicators exist in the entire text, it is skipped
+        return not any(v in lower for v in vendor_indicators)
 
     async def execute(self, context: AgentContext, input_text: str) -> AgentResult:
         tdd_text = input_text
