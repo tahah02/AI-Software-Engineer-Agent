@@ -74,7 +74,7 @@ def get_default_agent_specs() -> list[dict[str, object]]:
             True,
             True,
             "gemini",
-            "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite",
         ),
         (
             "AGENT_2",
@@ -82,9 +82,9 @@ def get_default_agent_specs() -> list[dict[str, object]]:
             False,
             True,
             "gemini",
-            "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite",
         ),
-        ("AGENT_3", "Agent 3: Main Coding Agent", True, True, "gemini", "gemini-3-flash-preview"),
+        ("AGENT_3", "Agent 3: Main Coding Agent", True, True, "gemini", "gemini-3.5-flash-lite"),
         (
             "AGENT_4",
             "Agent 4: Independent QA Engineer",

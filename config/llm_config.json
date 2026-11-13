@@ -21,7 +21,7 @@
     },
     "gemini": {
       "default_model": "gemini-3.5-flash-lite",
-      "fallback_model": "gemini-3-flash-preview",
+      "fallback_model": null,
       "available_models": [
         "gemini-3-flash-preview",
         "gemini-3.5-flash-lite",
@@ -85,32 +85,32 @@
     "AGENT_1": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "gemini",
-      "fallback_model": "gemini-3-flash-preview"
+      "fallback_provider": null,
+      "fallback_model": null
     },
     "AGENT_2": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "gemini",
-      "fallback_model": "gemini-3-flash-preview"
+      "fallback_provider": null,
+      "fallback_model": null
     },
     "AGENT_3": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "gemini",
-      "fallback_model": "gemini-3-flash-preview"
+      "fallback_provider": null,
+      "fallback_model": null
     },
     "AGENT_4": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "gemini",
-      "fallback_model": "gemini-3-flash-preview"
+      "fallback_provider": null,
+      "fallback_model": null
     },
     "AGENT_5": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "gemini",
-      "fallback_model": "gemini-3-flash-preview"
+      "fallback_provider": null,
+      "fallback_model": null
     }
   }
 }
