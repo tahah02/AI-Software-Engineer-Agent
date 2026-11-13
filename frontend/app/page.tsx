@@ -59,9 +59,9 @@ import {
   X,
 
   FileText,
-
   Download,
-
+  Square,
+  ExternalLink,
 } from "lucide-react";
 
 import {
@@ -91,9 +91,10 @@ import {
   resolveApproval,
 
   subscribeToWorkflowStream,
-
+  runProject,
+  stopProject,
+  fetchProjectStatus,
   ProjectItem,
-
   ArtifactItem,
 
 } from "@/lib/api";
@@ -246,6 +247,70 @@ export default function WorkspacePage() {
     setAgentToggles(newToggles);
     if (selectedProject?.id) {
       await updateProjectAgents(selectedProject.id, newToggles);
+    }
+  };
+
+  // Live Project Runner State
+  const [isRunning, setIsRunning] = useState(false);
+  const [isStartingRun, setIsStartingRun] = useState(false);
+  const [runningUrl, setRunningUrl] = useState<string | null>(null);
+  const [runningPort, setRunningPort] = useState<number | null>(null);
+
+  const pollStatus = async (projectId: string) => {
+    try {
+      const res = await fetchProjectStatus(projectId, "channel-app");
+      if (res.status === "RUNNING" || res.status === "ALREADY_RUNNING") {
+        setIsRunning(true);
+        setRunningUrl(res.url || (res.port ? `http://localhost:${res.port}` : null));
+        setRunningPort(res.port || null);
+      } else {
+        setIsRunning(false);
+        setRunningUrl(null);
+        setRunningPort(null);
+      }
+    } catch {
+      setIsRunning(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedProject?.id) return;
+    pollStatus(selectedProject.id);
+    const interval = setInterval(() => {
+      pollStatus(selectedProject.id);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [selectedProject?.id]);
+
+  const handleRunProject = async () => {
+    if (!selectedProject?.id || isStartingRun) return;
+    setIsStartingRun(true);
+    try {
+      const res = await runProject(selectedProject.id, "channel-app");
+      if (res.status === "RUNNING" || res.status === "ALREADY_RUNNING") {
+        setIsRunning(true);
+        const info = res.info;
+        const port = info?.port || res.port;
+        const url = info?.url || res.url;
+        setRunningPort(port || null);
+        setRunningUrl(url || (port ? `http://localhost:${port}` : null));
+      }
+    } catch (e: any) {
+      alert(`Could not start project: ${e.message || e}`);
+    } finally {
+      setIsStartingRun(false);
+    }
+  };
+
+  const handleStopProject = async () => {
+    if (!selectedProject?.id) return;
+    try {
+      await stopProject(selectedProject.id);
+      setIsRunning(false);
+      setRunningUrl(null);
+      setRunningPort(null);
+    } catch (e: any) {
+      alert(`Could not stop project: ${e.message || e}`);
     }
   };
 
@@ -1366,18 +1431,63 @@ export default function WorkspacePage() {
 
 
               <button
-
                 onClick={() => setShowConfigModal(true)}
-
                 className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[#141b2a] border border-cyan-500/30 text-cyan-300 hover:bg-cyan-950/50 text-[11px] font-medium transition"
-
               >
-
                 <SettingsIcon className="h-3 w-3" />
-
                 Configure
-
               </button>
+
+              {/* Live Project Runner Controls */}
+              {selectedProject && (
+                <div className="flex items-center gap-1.5 ml-1">
+                  {isRunning ? (
+                    <div className="flex items-center gap-1.5 bg-emerald-950/70 border border-emerald-500/40 px-2 py-0.5 rounded-lg shadow-sm shadow-emerald-950">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-[11px] font-medium text-emerald-300">
+                        :{runningPort || "Active"}
+                      </span>
+                      {runningUrl && (
+                        <a
+                          href={runningUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-emerald-400 hover:text-emerald-200 transition p-0.5 hover:bg-emerald-900/40 rounded"
+                          title={`Open Live Preview: ${runningUrl}`}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleStopProject}
+                        className="ml-0.5 text-rose-400 hover:text-rose-200 transition p-0.5 hover:bg-rose-950/60 rounded"
+                        title="Stop Project Service"
+                      >
+                        <Square className="h-3 w-3 fill-rose-400" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleRunProject}
+                      disabled={isStartingRun}
+                      className="flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-900/60 hover:border-emerald-400/60 text-[11px] font-medium transition shadow-sm shadow-emerald-950 disabled:opacity-50"
+                      title="Run / Start Project Service"
+                    >
+                      {isStartingRun ? (
+                        <Loader2 className="h-3 w-3 animate-spin text-emerald-300" />
+                      ) : (
+                        <Play className="h-3 w-3 fill-emerald-300" />
+                      )}
+                      <span>{isStartingRun ? "Starting..." : "Run Project"}</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
             </div>
 

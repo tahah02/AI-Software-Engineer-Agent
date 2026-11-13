@@ -104,6 +104,8 @@ class LLMProviderResolver:
             config_orm = session.scalar(stmt)
 
         if config_orm is None:
+            if session and project_id:
+                raise EntityNotFoundError("ProjectAgentConfig", f"project={project_id}, agent={agent_str}")
             # Fall back directly to centralized agent_assignments in llm_config.json
             assignment = settings.llm_config.agent_assignments.get(agent_key)
             if assignment:
@@ -181,9 +183,19 @@ class LLMProviderResolver:
     ) -> LLMRequest:
         prepared_messages: list[LLMMessage] = []
 
-        system_prompt = resolved_config.custom_system_prompt or base_system_prompt
-        if system_prompt:
-            prepared_messages.append(LLMMessage(role="system", content=system_prompt))
+        system_parts = []
+        if base_system_prompt:
+            system_parts.append(base_system_prompt)
+        if resolved_config.custom_system_prompt:
+            if base_system_prompt:
+                system_parts.append(
+                    f"[Project Custom Instructions (Supplementary - Mandatory Base Instructions Take Precedence)]:\n{resolved_config.custom_system_prompt}"
+                )
+            else:
+                system_parts.append(resolved_config.custom_system_prompt)
+
+        if system_parts:
+            prepared_messages.append(LLMMessage(role="system", content="\n\n".join(system_parts)))
 
         prepared_messages.extend(messages)
 
@@ -195,3 +207,21 @@ class LLMProviderResolver:
             fallback_model=resolved_config.fallback_model,
             **kwargs,
         )
+
+    async def execute_agent(
+        self,
+        session: Session | None,
+        project_id: uuid.UUID | None,
+        agent: AgentType | str,
+        messages: list[LLMMessage],
+        base_system_prompt: str | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        resolved = self.resolve_agent_config(session, project_id, agent)
+        req = self.build_agent_request(
+            resolved,
+            messages=messages,
+            base_system_prompt=base_system_prompt,
+            **kwargs,
+        )
+        return await resolved.adapter.complete(req)

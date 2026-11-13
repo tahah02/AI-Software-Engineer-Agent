@@ -23,20 +23,13 @@ from src.domain.workflow_state import WorkflowState
 from pathlib import Path
 
 from src.infrastructure.db.models import (
-
     AgentExecutionORM,
-
     AgentTaskORM,
     DefectORM,
-
     HumanApprovalORM,
-
     ProjectAgentConfigORM,
-
     ProjectORM,
-
     WorkflowRunORM,
-
 )
 
 from src.infrastructure.git.git_service import GitService
@@ -53,20 +46,14 @@ from src.infrastructure.orchestration.graph_builder import WorkflowGraphBuilder
 
 from src.ports.agent import AgentContext
 
+
 class OrchestratorService:
-
     def __init__(
-
         self,
-
         db: Session,
-
         resolver: LLMProviderResolver,
-
         git_service: GitService,
-
         tracker: TokenTrackerService | None = None,
-
     ) -> None:
 
         self.db = db
@@ -86,25 +73,23 @@ class OrchestratorService:
         if not tdd_text:
             return True
         lower = tdd_text.lower()
-        if "agent 2" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+        if "agent 2" in lower and any(
+            k in lower for k in ("skipped", "not applicable", "bypassed")
+        ):
             return False
-        if "mock api developer" in lower and any(k in lower for k in ("skipped", "not applicable", "bypassed")):
+        if "mock api developer" in lower and any(
+            k in lower for k in ("skipped", "not applicable", "bypassed")
+        ):
             return False
-        if "mock vendor server" in lower and any(k in lower for k in ("excluded", "not applicable", "bypassed")):
+        if "mock vendor server" in lower and any(
+            k in lower for k in ("excluded", "not applicable", "bypassed")
+        ):
             return False
         return True
 
     def _get_enabled_agents(self, project_id: uuid.UUID) -> dict[str, bool]:
 
-        configs = (
-
-            self.db.query(ProjectAgentConfigORM)
-
-            .filter_by(project_id=project_id)
-
-            .all()
-
-        )
+        configs = self.db.query(ProjectAgentConfigORM).filter_by(project_id=project_id).all()
 
         enabled_map: dict[str, bool] = {}
 
@@ -143,99 +128,130 @@ class OrchestratorService:
         return enabled_map
 
     async def start_workflow(
-
         self,
-
         project_id: uuid.UUID,
-
         user_requirement: str,
-
         workflow_run_id: uuid.UUID | None = None,
-
     ) -> WorkflowState:
 
         project = self.db.query(ProjectORM).filter_by(id=project_id).first()
 
         if not project:
-
             raise ValueError(f"Project {project_id} not found.")
 
         latest_spec_approval = (
-
             self.db.query(HumanApprovalORM)
-
             .join(WorkflowRunORM, HumanApprovalORM.workflow_run_id == WorkflowRunORM.id)
-
             .filter(
-
                 WorkflowRunORM.project_id == project_id,
-
                 HumanApprovalORM.gate_type == "SPECIFICATION",
-
             )
-
             .order_by(HumanApprovalORM.requested_at.desc())
-
             .first()
-
         )
 
         cleaned_req = user_requirement.strip().lower().rstrip("!.,?")
 
-        is_revision_intent = any(w in cleaned_req for w in [
-            "revise", "revision", "requested changes", "change request", "modifications",
-            "update spec", "change database", "change the", "badal", "tabdeeli", "theek karo",
-            "sahi karo", "change karo", "revising", "please revise"
-        ])
+        is_revision_intent = any(
+            w in cleaned_req
+            for w in [
+                "revise",
+                "revision",
+                "requested changes",
+                "change request",
+                "modifications",
+                "update spec",
+                "change database",
+                "change the",
+                "badal",
+                "tabdeeli",
+                "theek karo",
+                "sahi karo",
+                "change karo",
+                "revising",
+                "please revise",
+            ]
+        )
 
-        is_approved_intent = (
-            not is_revision_intent and (
-                cleaned_req in {"continue", "approve", "approved", "proceed", "yes", "ok", "okay", "go ahead", "start coding", "write code", "code", "build", "build it", "chalo", "kro", "kardo"}
-                or any(w in cleaned_req for w in ["approved", "proceed with full application", "continue", "start coding", "write code", "agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"])
+        is_approved_intent = not is_revision_intent and (
+            cleaned_req
+            in {
+                "continue",
+                "approve",
+                "approved",
+                "proceed",
+                "yes",
+                "ok",
+                "okay",
+                "go ahead",
+                "start coding",
+                "write code",
+                "code",
+                "build",
+                "build it",
+                "chalo",
+                "kro",
+                "kardo",
+            }
+            or any(
+                w in cleaned_req
+                for w in [
+                    "approved",
+                    "proceed with full application",
+                    "continue",
+                    "start coding",
+                    "write code",
+                    "agent4",
+                    "agent 4",
+                    "qa",
+                    "test",
+                    "agent5",
+                    "agent 5",
+                    "security",
+                    "audit",
+                ]
             )
         )
 
-        is_qa_or_sec_only = any(w in cleaned_req for w in ["agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"])
+        is_qa_or_sec_only = any(
+            w in cleaned_req
+            for w in ["agent4", "agent 4", "qa", "test", "agent5", "agent 5", "security", "audit"]
+        )
 
-        tdd_check = Path(self.git_service.base_workspace_dir) / str(project_id) / "docs" / "TECHNICAL_DESIGN.md"
+        tdd_check = (
+            Path(self.git_service.base_workspace_dir)
+            / str(project_id)
+            / "docs"
+            / "TECHNICAL_DESIGN.md"
+        )
 
         if is_revision_intent:
             is_spec_approved = False
         elif latest_spec_approval and latest_spec_approval.status == "REJECTED":
             is_spec_approved = False
         else:
-            is_spec_approved = (latest_spec_approval is not None and latest_spec_approval.status == "APPROVED") or (is_approved_intent and tdd_check.exists())
+            is_spec_approved = (
+                latest_spec_approval is not None and latest_spec_approval.status == "APPROVED"
+            ) or (is_approved_intent and tdd_check.exists())
 
         run = None
 
         if workflow_run_id:
-
             run = self.db.query(WorkflowRunORM).filter_by(id=workflow_run_id).first()
 
         if not run:
-
             run = (
-
                 self.db.query(WorkflowRunORM)
-
                 .filter_by(project_id=project_id)
-
                 .order_by(WorkflowRunORM.created_at.desc())
-
                 .first()
-
             )
 
         if not run or run.status in ("COMPLETED", "FAILED"):
-
             run = WorkflowRunORM(
-
                 project_id=project_id,
-
                 current_phase="DEVELOPMENT" if is_spec_approved else "SPECIFICATION",
-
                 status="RUNNING",
-
             )
 
             self.db.add(run)
@@ -243,11 +259,9 @@ class OrchestratorService:
             self.db.flush()
 
         else:
-
             run.status = "RUNNING"
 
             if is_spec_approved:
-
                 run.current_phase = "DEVELOPMENT"
 
             self.db.flush()
@@ -257,16 +271,16 @@ class OrchestratorService:
         # Initialize Channel App repo (always required)
 
         channel_repo_path = self.git_service.initialize_repository(
-
             project_id=project_id,
-
             repo_type=RepositoryType.CHANNEL_APP,
-
             target_framework=project.target_framework,
-
         )
 
-        tdd_disk = Path(self.git_service.base_workspace_dir / str(project_id)) / "docs" / "TECHNICAL_DESIGN.md"
+        tdd_disk = (
+            Path(self.git_service.base_workspace_dir / str(project_id))
+            / "docs"
+            / "TECHNICAL_DESIGN.md"
+        )
         tdd_existing_text = ""
         if tdd_disk.exists():
             try:
@@ -279,15 +293,10 @@ class OrchestratorService:
         mock_repo_path = None
 
         if enabled_agents.get(AgentType.MOCK_DEVELOPER.name, False) and requires_mock:
-
             mock_repo_path = self.git_service.initialize_repository(
-
                 project_id=project_id,
-
                 repo_type=RepositoryType.MOCK_VENDOR_API,
-
                 target_framework=project.target_framework,
-
             )
 
         workspace_path = str(self.git_service.base_workspace_dir / str(project_id))
@@ -297,8 +306,20 @@ class OrchestratorService:
         backend_exists = channel_app_dir.exists() and any(channel_app_dir.iterdir())
         lower_req = user_requirement.lower()
         client_tokens = [
-            "frontend", "front-end", "front end", "client app", "client", "ui", "user interface",
-            "web app", "web portal", "portal", "dashboard", "mobile app", "spa", "gui"
+            "frontend",
+            "front-end",
+            "front end",
+            "client app",
+            "client",
+            "ui",
+            "user interface",
+            "web app",
+            "web portal",
+            "portal",
+            "dashboard",
+            "mobile app",
+            "spa",
+            "gui",
         ]
         is_client_ext = any(w in lower_req for w in client_tokens)
         is_incremental = bool(backend_exists and is_client_ext)
@@ -306,7 +327,10 @@ class OrchestratorService:
         subsystem_framework = None
         if is_incremental:
             from src.api.routes.workflow import detect_target_framework
-            subsystem_framework = detect_target_framework(user_requirement, default="TYPESCRIPT_NEXTJS")
+
+            subsystem_framework = detect_target_framework(
+                user_requirement, default="TYPESCRIPT_NEXTJS"
+            )
 
         initial_state: WorkflowState = {
             "project_id": str(project_id),
@@ -331,28 +355,34 @@ class OrchestratorService:
 
         # Build agents
 
-        agent1 = DocumentationReviewerAgent(resolver=self.resolver, tracker=self.tracker, db=self.db)
+        agent1 = DocumentationReviewerAgent(
+            resolver=self.resolver, tracker=self.tracker, db=self.db
+        )
 
-        agent2 = MockVendorDeveloperAgent(resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db)
+        agent2 = MockVendorDeveloperAgent(
+            resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db
+        )
 
-        agent3 = MainCodingAgent(resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db)
+        agent3 = MainCodingAgent(
+            resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db
+        )
 
-        agent4 = QAEngineerAgent(resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db)
+        agent4 = QAEngineerAgent(
+            resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db
+        )
 
-        agent5 = SecurityReviewerAgent(resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db)
+        agent5 = SecurityReviewerAgent(
+            resolver=self.resolver, git_service=self.git_service, tracker=self.tracker, db=self.db
+        )
 
         # Node adapter wrappers
 
         def _make_context(state: WorkflowState, agent_name: str, task_type: str) -> AgentContext:
 
             task = AgentTaskORM(
-
                 project_id=uuid.UUID(state["project_id"]),
-
                 agent_name=agent_name,
-
                 task_type=task_type,
-
             )
 
             self.db.add(task)
@@ -387,7 +417,6 @@ class OrchestratorService:
             # Fast-path bypass to coding if TDD exists and user approved / continued
 
             if tdd_disk.exists() and (s.get("spec_approved") or is_approved_intent):
-
                 s["tdd_path"] = "docs/TECHNICAL_DESIGN.md"
 
                 s["xunit_spec_path"] = "docs/XUNIT_TEST_SPEC.md"
@@ -405,7 +434,6 @@ class OrchestratorService:
             # Run Agent 1 if specs do not exist OR if user provided fresh non-approval requirements
 
             if not tdd_disk.exists() or not is_approved_intent:
-
                 ctx = _make_context(s, "Agent 1: Documentation Reviewer", "SPECIFICATION")
 
                 res = await agent1.execute(ctx, s["user_requirement"])
@@ -413,31 +441,18 @@ class OrchestratorService:
                     s["target_framework"] = res.metadata["target_framework"]
 
                 save_chat_message(
-
                     self.db,
-
                     project_id,
-
                     "agent1",
-
                     "I have analyzed your software requirements and generated technical specifications.",
-
                     metadata={
-
                         "checklist": [
-
                             "Analyzed architecture boundaries & target framework",
-
                             "Extracted functional requirements & API contracts",
-
                             "Created test specifications",
-
                             "Generated Technical Design Document (TDD)",
-
                         ]
-
                     },
-
                 )
 
             s["tdd_path"] = "docs/TECHNICAL_DESIGN.md"
@@ -463,7 +478,11 @@ class OrchestratorService:
                     cfg = (
                         self.db.query(ProjectAgentConfigORM)
                         .filter_by(project_id=project_id)
-                        .filter(ProjectAgentConfigORM.agent_type.in_([AgentType.MOCK_DEVELOPER.name, "AGENT_2", "AGENT2"]))
+                        .filter(
+                            ProjectAgentConfigORM.agent_type.in_(
+                                [AgentType.MOCK_DEVELOPER.name, "AGENT_2", "AGENT2"]
+                            )
+                        )
                         .first()
                     )
                     if cfg and cfg.is_enabled:
@@ -473,7 +492,6 @@ class OrchestratorService:
             # If specs already approved, bypass approval gate immediately to coding
 
             if s.get("spec_approved") and is_approved_intent:
-
                 self.checkpoint_service.save_checkpoint(run.id, "SPECIFICATION", s)
 
                 self.db.commit()
@@ -481,59 +499,36 @@ class OrchestratorService:
                 return s
 
             existing_app = (
-
                 self.db.query(HumanApprovalORM)
-
                 .filter_by(workflow_run_id=run.id, gate_type="SPECIFICATION", status="PENDING")
-
                 .first()
-
             )
 
             if not existing_app:
-
                 new_app = self.approval_engine.create_approval_request(
-
                     workflow_run_id=run.id,
-
                     gate_type="SPECIFICATION",
-
                     prompt_text="Please review the technical design and test specifications. Shall I proceed with implementation?",
-
                 )
 
                 save_chat_message(
-
                     self.db,
-
                     project_id,
-
                     "agent1",
-
                     "Human approval required to proceed with code implementation.",
-
                     metadata={
-
                         "isApprovalCard": True,
-
                         "approvalRequired": True,
-
                         "approvalId": str(new_app.id),
-
                         "gateType": "SPECIFICATION",
-
                         "status": "PENDING",
-
                         "isApproved": False,
-
                     },
-
                 )
 
                 s["spec_approved"] = False
 
             else:
-
                 s["spec_approved"] = False
 
             self.checkpoint_service.save_checkpoint(run.id, "SPECIFICATION", s)
@@ -555,7 +550,10 @@ class OrchestratorService:
                 tdd_content = s.get("technical_design", "")
 
             # Guard: If TDD indicates Agent 2 is skipped or not required
-            if not self._inspect_tdd_for_mock_vendor(tdd_content) or s.get("requires_mock_vendor") is False:
+            if (
+                not self._inspect_tdd_for_mock_vendor(tdd_content)
+                or s.get("requires_mock_vendor") is False
+            ):
                 s["requires_mock_vendor"] = False
                 s["enabled_agents"][AgentType.MOCK_DEVELOPER.name] = False
                 s["enabled_agents"]["AGENT_2"] = False
@@ -636,10 +634,13 @@ class OrchestratorService:
 
             app_dir = Path(s["workspace_path"]) / "channel-app"
 
-            has_existing_code = (app_dir / "app" / "page.tsx").exists() or (app_dir / "main.py").exists() or any(app_dir.glob("*.csproj"))
+            has_existing_code = (
+                (app_dir / "app" / "page.tsx").exists()
+                or (app_dir / "main.py").exists()
+                or any(app_dir.glob("*.csproj"))
+            )
 
             if is_qa_or_sec_only and has_existing_code:
-
                 s["build_success"] = True
 
                 s["current_phase"] = "DEVELOPMENT"
@@ -654,9 +655,7 @@ class OrchestratorService:
             remediation_count = s.get("defect_remediation_count", 0)
             if remediation_count > 0:
                 defects = (
-                    self.db.query(DefectORM)
-                    .filter_by(project_id=project_id, status="OPEN")
-                    .all()
+                    self.db.query(DefectORM).filter_by(project_id=project_id, status="OPEN").all()
                 )
                 if defects:
                     defect_lines = "\n".join(f"- [{d.severity}] {d.description}" for d in defects)
@@ -676,7 +675,9 @@ class OrchestratorService:
             ctx = _make_context(s, "Agent 3: Main Coding Agent", "DEVELOPMENT")
             res = await agent3.execute(ctx, coding_input)
             if remediation_count > 0:
-                self.db.query(DefectORM).filter_by(project_id=project_id, status="OPEN").update({"status": "RESOLVED"})
+                self.db.query(DefectORM).filter_by(project_id=project_id, status="OPEN").update(
+                    {"status": "RESOLVED"}
+                )
                 self.db.commit()
 
             s["channel_commit_hash"] = res.metadata.get("commit_hash")
@@ -686,8 +687,12 @@ class OrchestratorService:
             s["current_phase"] = "DEVELOPMENT"
 
             build_log = res.metadata.get("build_log", "")
-            is_frontend = s.get("is_incremental") or res.metadata.get("target_subsystem") == "frontend"
-            subsystem_label = "Frontend client interface" if is_frontend else "Channel application code"
+            is_frontend = (
+                s.get("is_incremental") or res.metadata.get("target_subsystem") == "frontend"
+            )
+            subsystem_label = (
+                "Frontend client interface" if is_frontend else "Channel application code"
+            )
             target_folder = "frontend/" if is_frontend else "channel-app/"
             fw_label = res.metadata.get("effective_framework", "Clean Architecture")
 
@@ -699,8 +704,16 @@ class OrchestratorService:
                     "Verified build and dependency installation (0 errors)",
                 ]
             else:
-                err_lines = [l.strip() for l in build_log.splitlines() if "error CS" in l or "Error(s)" in l or "FAILED" in l or "error:" in l]
-                err_summary = "\n".join(err_lines[:6]) if err_lines else "Compiler errors detected during build verification."
+                err_lines = [
+                    l.strip()
+                    for l in build_log.splitlines()
+                    if "error CS" in l or "Error(s)" in l or "FAILED" in l or "error:" in l
+                ]
+                err_summary = (
+                    "\n".join(err_lines[:6])
+                    if err_lines
+                    else "Compiler errors detected during build verification."
+                )
                 agent3_msg = (
                     f"⚠️ {subsystem_label} synthesized, but build compilation failed:\n\n"
                     f"```\n{err_summary}\n```\n\n"
@@ -713,17 +726,11 @@ class OrchestratorService:
                 ]
 
             save_chat_message(
-
                 self.db,
-
                 project_id,
-
                 "agent3",
-
                 agent3_msg,
-
                 metadata={"checklist": checklist},
-
             )
 
             self.checkpoint_service.save_checkpoint(run.id, "DEVELOPMENT", s)
@@ -785,10 +792,28 @@ class OrchestratorService:
             cli_out = res.metadata.get("cli_output", "")
 
             # Format categorized test tables
-            unit_tests = [tr for tr in test_results if tr.get("category") == "UNIT_TEST" or str(tr.get("test_key", "")).startswith("UT")]
-            integration_tests = [tr for tr in test_results if tr.get("category") == "INTEGRATION_TEST" or str(tr.get("test_key", "")).startswith("IT")]
-            ext_tests = [tr for tr in test_results if tr.get("category") == "SUPPLEMENTAL_TEST" or str(tr.get("test_key", "")).startswith("EXT")]
-            other_tests = [tr for tr in test_results if tr not in unit_tests and tr not in integration_tests and tr not in ext_tests]
+            unit_tests = [
+                tr
+                for tr in test_results
+                if tr.get("category") == "UNIT_TEST" or str(tr.get("test_key", "")).startswith("UT")
+            ]
+            integration_tests = [
+                tr
+                for tr in test_results
+                if tr.get("category") == "INTEGRATION_TEST"
+                or str(tr.get("test_key", "")).startswith("IT")
+            ]
+            ext_tests = [
+                tr
+                for tr in test_results
+                if tr.get("category") == "SUPPLEMENTAL_TEST"
+                or str(tr.get("test_key", "")).startswith("EXT")
+            ]
+            other_tests = [
+                tr
+                for tr in test_results
+                if tr not in unit_tests and tr not in integration_tests and tr not in ext_tests
+            ]
 
             table_md = ""
 
@@ -849,7 +874,9 @@ class OrchestratorService:
                     act = tr.get("actual_status", 200)
                     st = tr.get("status", "PASSED")
                     det = tr.get("details", "")
-                    generic_rows.append(f"| **{k}** | `{m} {ep}` | `{exp}` | `{act}` | `{st}` | {det} |")
+                    generic_rows.append(
+                        f"| **{k}** | `{m} {ep}` | `{exp}` | `{act}` | `{st}` | {det} |"
+                    )
                 table_md = (
                     "\n\n| Test ID | Method & Route | Expected | Actual | Status | Verification Evidence |\n"
                     "| :--- | :--- | :--- | :--- | :--- | :--- |\n" + "\n".join(generic_rows)
@@ -921,15 +948,10 @@ class OrchestratorService:
             s["current_phase"] = "SECURITY_AUDIT"
 
             save_chat_message(
-
                 self.db,
-
                 project_id,
-
                 "agent5",
-
                 f"### 🛡️ Security SAST Audit Report\n\n- **Scan Status**: `{s['security_status']}`\n- **Vulnerabilities Found**: `{s['security_findings_count']}`\n\n**Summary**: {res.summary}",
-
             )
 
             self.checkpoint_service.save_checkpoint(run.id, "SECURITY_AUDIT", s)
@@ -943,11 +965,8 @@ class OrchestratorService:
             # Generate GitReleaseManifest
 
             manifest = self.git_service.create_release_manifest(
-
                 project_id=uuid.UUID(s["project_id"]),
-
                 release_tag=f"v0.1.{s.get('iteration', 0)}",
-
             )
 
             s["release_tag"] = manifest.release_tag
@@ -976,7 +995,9 @@ class OrchestratorService:
             # Dynamically synthesize root README.md and startup scripts in workspace
             workspace_dir = Path(s["workspace_path"])
             tf = (project.target_framework or "").lower()
-            has_mock = s.get("requires_mock_vendor", True) and (bool(s.get("mock_commit_hash")) or (workspace_dir / "mock-vendor-api").exists())
+            has_mock = s.get("requires_mock_vendor", True) and (
+                bool(s.get("mock_commit_hash")) or (workspace_dir / "mock-vendor-api").exists()
+            )
 
             readme_lines = [
                 f"# {project.name}",
@@ -986,22 +1007,36 @@ class OrchestratorService:
                 "- `channel-app/`: Core application services and endpoints.",
             ]
             if (workspace_dir / "channel-app.Tests").exists():
-                readme_lines.append("- `channel-app.Tests/`: Executable xUnit unit and integration test project.")
+                readme_lines.append(
+                    "- `channel-app.Tests/`: Executable xUnit unit and integration test project."
+                )
             if has_mock:
-                readme_lines.append("- `mock-vendor-api/`: Standalone FastAPI external mock vendor service.")
-            readme_lines.append("- `docs/`: Technical Design Document (TDD) and Test Specifications.\n")
+                readme_lines.append(
+                    "- `mock-vendor-api/`: Standalone FastAPI external mock vendor service."
+                )
+            readme_lines.append(
+                "- `docs/`: Technical Design Document (TDD) and Test Specifications.\n"
+            )
 
             readme_lines.append("## Quick Start Guide\n")
             if has_mock:
-                readme_lines.append("### 1. Start External Mock Vendor Service (Port 5100)\n```bash\ncd mock-vendor-api\npip install -r requirements.txt\nuvicorn main:app --port 5100\n```\n")
+                readme_lines.append(
+                    "### 1. Start External Mock Vendor Service (Port 5100)\n```bash\ncd mock-vendor-api\npip install -r requirements.txt\nuvicorn main:app --port 5100\n```\n"
+                )
 
             if any(k in tf for k in ("cs", "csharp", "dotnet", "net")):
-                readme_lines.append("### 2. Start Channel Application (Port 5001)\n```bash\ncd channel-app\ndotnet run\n```\nSwagger UI: http://localhost:5001/swagger\nHealth Check: http://localhost:5001/health\n")
+                readme_lines.append(
+                    "### 2. Start Channel Application (Port 5001)\n```bash\ncd channel-app\ndotnet run\n```\nSwagger UI: http://localhost:5001/swagger\nHealth Check: http://localhost:5001/health\n"
+                )
                 readme_lines.append("### 3. Run Automated xUnit Tests\n```bash\ndotnet test\n```\n")
             elif any(k in tf for k in ("next", "react", "type", "ts", "node")):
-                readme_lines.append("### 2. Start Channel Application (Port 3000)\n```bash\ncd channel-app\nnpm install\nnpm run dev\n```\n")
+                readme_lines.append(
+                    "### 2. Start Channel Application (Port 3000)\n```bash\ncd channel-app\nnpm install\nnpm run dev\n```\n"
+                )
             else:
-                readme_lines.append("### 2. Start Channel Application (Port 8000)\n```bash\ncd channel-app\npip install -r requirements.txt\nuvicorn src.main:app --port 8000\n```\n")
+                readme_lines.append(
+                    "### 2. Start Channel Application (Port 8000)\n```bash\ncd channel-app\npip install -r requirements.txt\nuvicorn src.main:app --port 8000\n```\n"
+                )
 
             readme_content = "\n".join(readme_lines)
             try:
@@ -1009,15 +1044,25 @@ class OrchestratorService:
             except Exception as e:
                 logger.warning(f"Could not write root README: {e}")
 
-            run_script_lines = ["# AAISE Local Multi-Service Launcher\nWrite-Host 'Starting project services...' -ForegroundColor Cyan\n"]
+            run_script_lines = [
+                "# AAISE Local Multi-Service Launcher\nWrite-Host 'Starting project services...' -ForegroundColor Cyan\n"
+            ]
             if has_mock:
-                run_script_lines.append("Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd mock-vendor-api; uvicorn main:app --port 5100'")
+                run_script_lines.append(
+                    "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd mock-vendor-api; uvicorn main:app --port 5100'"
+                )
             if any(k in tf for k in ("cs", "csharp", "dotnet", "net")):
-                run_script_lines.append("Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; dotnet run'")
+                run_script_lines.append(
+                    "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; dotnet run'"
+                )
             elif any(k in tf for k in ("next", "react", "type", "ts", "node")):
-                run_script_lines.append("Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; npm run dev'")
+                run_script_lines.append(
+                    "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; npm run dev'"
+                )
             else:
-                run_script_lines.append("Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; uvicorn src.main:app --port 8000'")
+                run_script_lines.append(
+                    "Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd channel-app; uvicorn src.main:app --port 8000'"
+                )
 
             run_script_content = "\n".join(run_script_lines)
             try:
@@ -1026,15 +1071,10 @@ class OrchestratorService:
                 logger.warning(f"Could not write run.ps1: {e}")
 
             save_chat_message(
-
                 self.db,
-
                 project_id,
-
                 "assistant",
-
                 release_msg,
-
             )
 
             self.db.flush()
@@ -1044,19 +1084,12 @@ class OrchestratorService:
             return s
 
         builder = WorkflowGraphBuilder(
-
             doc_reviewer_fn=doc_node,
-
             mock_developer_fn=mock_node,
-
             main_coder_fn=code_node,
-
             qa_engineer_fn=qa_node,
-
             security_reviewer_fn=sec_node,
-
             release_gate_fn=release_node,
-
         )
 
         graph = builder.build_graph()

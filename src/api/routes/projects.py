@@ -14,134 +14,104 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from fastapi.responses import StreamingResponse
 
-from pydantic import BaseModel
-
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
-
 from src.domain.enums import RepositoryType
-
 from src.infrastructure.db.models import (
-
     ProjectAgentConfigORM,
-
     ProjectFileORM,
-
     ProjectORM,
-
     WorkflowRunORM,
-
     WorkflowCheckpointORM,
-
     HumanApprovalORM,
-
     ConversationORM,
-
     MessageORM,
-
 )
-
 import json
-
 from src.infrastructure.config import settings
-
 from src.infrastructure.db.session import get_db
-
 from src.infrastructure.git.git_service import GitService
+from src.infrastructure.execution.process_manager import ProjectProcessManager
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+
 class ProjectItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
-
     name: str
-
     description: str | None = None
-
     target_framework: str
-
     status: str
-
     current_branch: str | None = "develop"
 
-    class Config:
-
-        from_attributes = True
 
 class CreateProjectRequest(BaseModel):
-
     name: str
-
     description: str | None = None
-
     target_framework: str = "PYTHON_FASTAPI"
-
     custom_workspace_path: str | None = None
-
     agent_toggles: dict[str, bool] | None = None
 
 
 def get_default_agent_specs() -> list[dict[str, object]]:
     assignments = getattr(settings.llm_config, "agent_assignments", {})
 
-    def _get_prov_model(agent_key: str, fallback_prov: str, fallback_model: str):
+    def _get_prov_model(agent_key: str, fallback_prov: str, fallback_model: str) -> tuple[str, str]:
         assign = assignments.get(agent_key)
         if assign:
-            prov = assign.provider.value if hasattr(assign.provider, "value") else str(assign.provider)
+            prov = (
+                assign.provider.value if hasattr(assign.provider, "value") else str(assign.provider)
+            )
             return prov, assign.model
         return fallback_prov, fallback_model
 
-    p1, m1 = _get_prov_model("AGENT_1", "gemini", "gemini-3-flash-preview")
-    p2, m2 = _get_prov_model("AGENT_2", "gemini", "gemini-3-flash-preview")
-    p3, m3 = _get_prov_model("AGENT_3", "gemini", "gemini-3-flash-preview")
-    p4, m4 = _get_prov_model("AGENT_4", "gemini", "gemini-3.5-flash-lite")
-    p5, m5 = _get_prov_model("AGENT_5", "gemini", "gemini-3.5-flash-lite")
+    meta = [
+        (
+            "AGENT_1",
+            "Agent 1: Documentation Reviewer",
+            True,
+            True,
+            "gemini",
+            "gemini-3-flash-preview",
+        ),
+        (
+            "AGENT_2",
+            "Agent 2: Mock Vendor API Developer",
+            False,
+            True,
+            "gemini",
+            "gemini-3-flash-preview",
+        ),
+        ("AGENT_3", "Agent 3: Main Coding Agent", True, True, "gemini", "gemini-3-flash-preview"),
+        (
+            "AGENT_4",
+            "Agent 4: Independent QA Engineer",
+            False,
+            True,
+            "gemini",
+            "gemini-3.5-flash-lite",
+        ),
+        ("AGENT_5", "Agent 5: Security Reviewer", False, True, "gemini", "gemini-3.5-flash-lite"),
+    ]
 
     return [
         {
-            "agent_type": "AGENT_1",
-            "agent_name": "Agent 1: Documentation Reviewer",
-            "is_mandatory": True,
-            "default_enabled": True,
-            "default_provider": p1,
-            "default_model": m1,
-        },
-        {
-            "agent_type": "AGENT_2",
-            "agent_name": "Agent 2: Mock Vendor API Developer",
-            "is_mandatory": False,
-            "default_enabled": True,
-            "default_provider": p2,
-            "default_model": m2,
-        },
-        {
-            "agent_type": "AGENT_3",
-            "agent_name": "Agent 3: Main Coding Agent",
-            "is_mandatory": True,
-            "default_enabled": True,
-            "default_provider": p3,
-            "default_model": m3,
-        },
-        {
-            "agent_type": "AGENT_4",
-            "agent_name": "Agent 4: Independent QA Engineer",
-            "is_mandatory": False,
-            "default_enabled": True,
-            "default_provider": p4,
-            "default_model": m4,
-        },
-        {
-            "agent_type": "AGENT_5",
-            "agent_name": "Agent 5: Security Reviewer",
-            "is_mandatory": False,
-            "default_enabled": True,
-            "default_provider": p5,
-            "default_model": m5,
-        },
+            "agent_type": k,
+            "agent_name": name,
+            "is_mandatory": is_mand,
+            "default_enabled": def_en,
+            "default_provider": _get_prov_model(k, fb_p, fb_m)[0],
+            "default_model": _get_prov_model(k, fb_p, fb_m)[1],
+        }
+        for k, name, is_mand, def_en, fb_p, fb_m in meta
     ]
 
 
-def ensure_project_agent_configs(project_id: uuid.UUID, db: Session, agent_toggles: dict[str, bool] | None = None) -> list[ProjectAgentConfigORM]:
+def ensure_project_agent_configs(
+    project_id: uuid.UUID, db: Session, agent_toggles: dict[str, bool] | None = None
+) -> list[ProjectAgentConfigORM]:
     existing_configs = db.query(ProjectAgentConfigORM).filter_by(project_id=project_id).all()
     existing_by_type = {c.agent_type.upper(): c for c in existing_configs}
 
@@ -154,7 +124,14 @@ def ensure_project_agent_configs(project_id: uuid.UUID, db: Session, agent_toggl
         orm = existing_by_type.get(key)
         if not orm:
             for ex_key, ex_orm in existing_by_type.items():
-                if key in ex_key or (key == "AGENT_1" and "DOC" in ex_key) or (key == "AGENT_2" and "MOCK" in ex_key) or (key == "AGENT_3" and "MAIN" in ex_key) or (key == "AGENT_4" and "QA" in ex_key) or (key == "AGENT_5" and "SEC" in ex_key):
+                if (
+                    key in ex_key
+                    or (key == "AGENT_1" and "DOC" in ex_key)
+                    or (key == "AGENT_2" and "MOCK" in ex_key)
+                    or (key == "AGENT_3" and "MAIN" in ex_key)
+                    or (key == "AGENT_4" and "QA" in ex_key)
+                    or (key == "AGENT_5" and "SEC" in ex_key)
+                ):
                     orm = ex_orm
                     break
 
@@ -164,11 +141,17 @@ def ensure_project_agent_configs(project_id: uuid.UUID, db: Session, agent_toggl
                 is_enabled = True
             elif agent_toggles:
                 if key == "AGENT_2":
-                    is_enabled = agent_toggles.get("agent2", agent_toggles.get("agent2_enabled", spec["default_enabled"]))
+                    is_enabled = agent_toggles.get(
+                        "agent2", agent_toggles.get("agent2_enabled", spec["default_enabled"])
+                    )
                 elif key == "AGENT_4":
-                    is_enabled = agent_toggles.get("agent4", agent_toggles.get("agent4_enabled", spec["default_enabled"]))
+                    is_enabled = agent_toggles.get(
+                        "agent4", agent_toggles.get("agent4_enabled", spec["default_enabled"])
+                    )
                 elif key == "AGENT_5":
-                    is_enabled = agent_toggles.get("agent5", agent_toggles.get("agent5_enabled", spec["default_enabled"]))
+                    is_enabled = agent_toggles.get(
+                        "agent5", agent_toggles.get("agent5_enabled", spec["default_enabled"])
+                    )
 
             orm = ProjectAgentConfigORM(
                 project_id=project_id,
@@ -188,8 +171,8 @@ def ensure_project_agent_configs(project_id: uuid.UUID, db: Session, agent_toggl
 
     return result
 
-@router.get("", response_model=list[ProjectItem])
 
+@router.get("", response_model=list[ProjectItem])
 def list_projects(db: Session = Depends(get_db)):
     projects = db.query(ProjectORM).order_by(ProjectORM.created_at.desc()).all()
     return [
@@ -204,20 +187,15 @@ def list_projects(db: Session = Depends(get_db)):
         for p in projects
     ]
 
-@router.post("", response_model=ProjectItem, status_code=status.HTTP_201_CREATED)
 
+@router.post("", response_model=ProjectItem, status_code=status.HTTP_201_CREATED)
 def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
 
     project = ProjectORM(
-
         name=req.name,
-
         description=req.description,
-
         target_framework=req.target_framework,
-
         status="ACTIVE",
-
     )
 
     db.add(project)
@@ -225,7 +203,6 @@ def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
     db.flush()
 
     if req.custom_workspace_path:
-
         project.custom_workspace_path = req.custom_workspace_path
 
     db.commit()
@@ -240,32 +217,26 @@ def create_project(req: CreateProjectRequest, db: Session = Depends(get_db)):
 
     Path(channel_dir).mkdir(parents=True, exist_ok=True)
 
-    git_service.initialize_repository(project.id, RepositoryType.CHANNEL_APP, target_framework=project.target_framework)
-
-    return ProjectItem(
-
-        id=project.id,
-
-        name=project.name,
-
-        description=project.description,
-
-        target_framework=project.target_framework,
-
-        status=project.status,
-
-        current_branch="develop",
-
+    git_service.initialize_repository(
+        project.id, RepositoryType.CHANNEL_APP, target_framework=project.target_framework
     )
 
-@router.get("/{project_id}/branches")
+    return ProjectItem(
+        id=project.id,
+        name=project.name,
+        description=project.description,
+        target_framework=project.target_framework,
+        status=project.status,
+        current_branch="develop",
+    )
 
+
+@router.get("/{project_id}/branches")
 def get_project_branches(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     project = db.query(ProjectORM).filter_by(id=project_id).first()
 
     if not project:
-
         raise HTTPException(status_code=404, detail="Project not found")
 
     git_service = GitService(db=db)
@@ -275,23 +246,18 @@ def get_project_branches(project_id: uuid.UUID, db: Session = Depends(get_db)):
     current_branch = git_service.get_current_branch(project.id, RepositoryType.CHANNEL_APP)
 
     return {
-
         "project_id": str(project.id),
-
         "branches": branches,
-
         "current_branch": current_branch or "develop",
-
     }
 
-@router.get("/{project_id}/diff")
 
+@router.get("/{project_id}/diff")
 def get_project_diff(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     project = db.query(ProjectORM).filter_by(id=project_id).first()
 
     if not project:
-
         raise HTTPException(status_code=404, detail="Project not found")
 
     git_service = GitService(db=db)
@@ -299,21 +265,17 @@ def get_project_diff(project_id: uuid.UUID, db: Session = Depends(get_db)):
     diff = git_service.get_diff(project.id, RepositoryType.CHANNEL_APP)
 
     return {
-
         "project_id": str(project.id),
-
         "diff": diff,
-
     }
 
-@router.get("/{project_id}/download")
 
+@router.get("/{project_id}/download")
 def download_project_codebase(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     project = db.query(ProjectORM).filter_by(id=project_id).first()
 
     if not project:
-
         raise HTTPException(status_code=404, detail="Project not found")
 
     git_service = GitService(db=db)
@@ -329,7 +291,11 @@ def download_project_codebase(project_id: uuid.UUID, db: Session = Depends(get_d
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
         for root, dirs, files in os.walk(base_to_walk):
-            dirs[:] = [d for d in dirs if d not in [".git", "bin", "obj", "__pycache__", "node_modules", ".vs", ".next"]]
+            dirs[:] = [
+                d
+                for d in dirs
+                if d not in [".git", "bin", "obj", "__pycache__", "node_modules", ".vs", ".next"]
+            ]
             for file in files:
                 full_path = Path(root) / file
                 archive_name = full_path.relative_to(base_to_walk)
@@ -342,17 +308,13 @@ def download_project_codebase(project_id: uuid.UUID, db: Session = Depends(get_d
     filename = f"{clean_name or 'project'}-codebase.zip"
 
     return StreamingResponse(
-
         zip_buffer,
-
         media_type="application/zip",
-
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-
     )
 
-@router.get("/{project_id}/file")
 
+@router.get("/{project_id}/file")
 def get_project_file_content(project_id: uuid.UUID, path: str, db: Session = Depends(get_db)):
 
     workspace_dir = Path("./workspace") / str(project_id)
@@ -362,30 +324,23 @@ def get_project_file_content(project_id: uuid.UUID, path: str, db: Session = Dep
     full_path = (workspace_dir / clean_path).resolve()
 
     if not str(full_path).startswith(str(workspace_dir.resolve())):
-
         raise HTTPException(status_code=403, detail="Access denied: outside workspace bounds.")
 
     if not full_path.exists() or not full_path.is_file():
-
         raise HTTPException(status_code=404, detail=f"File not found: {clean_path}")
 
     try:
-
         content = full_path.read_text(encoding="utf-8")
 
     except UnicodeDecodeError:
-
         content = "[Binary or unreadable file content]"
 
     return {
-
         "project_id": str(project_id),
-
         "file_path": clean_path,
-
         "content": content,
-
     }
+
 
 class UpdateAgentsRequest(BaseModel):
     agent2_enabled: bool | None = None
@@ -395,7 +350,9 @@ class UpdateAgentsRequest(BaseModel):
     agents: list[dict[str, object]] | None = None
 
 
-def _format_agents_response(project_id: uuid.UUID, configs: list[ProjectAgentConfigORM]) -> dict[str, object]:
+def _format_agents_response(
+    project_id: uuid.UUID, configs: list[ProjectAgentConfigORM]
+) -> dict[str, object]:
     by_type = {}
     for c in configs:
         atype = str(c.agent_type).upper()
@@ -420,14 +377,16 @@ def _format_agents_response(project_id: uuid.UUID, configs: list[ProjectAgentCon
         if spec["is_mandatory"]:
             is_en = True
 
-        agents_list.append({
-            "agent_type": key,
-            "agent_name": spec["agent_name"],
-            "is_mandatory": spec["is_mandatory"],
-            "is_enabled": is_en,
-            "provider": prov,
-            "model_name": model,
-        })
+        agents_list.append(
+            {
+                "agent_type": key,
+                "agent_name": spec["agent_name"],
+                "is_mandatory": spec["is_mandatory"],
+                "is_enabled": is_en,
+                "provider": prov,
+                "model_name": model,
+            }
+        )
 
     return {
         "project_id": str(project_id),
@@ -480,7 +439,12 @@ def update_project_agents(
     for c in configs:
         atype = str(c.agent_type).upper()
         for key, val in toggles_to_apply.items():
-            if key in atype or (key == "AGENT_2" and "MOCK" in atype) or (key == "AGENT_4" and "QA" in atype) or (key == "AGENT_5" and "SEC" in atype):
+            if (
+                key in atype
+                or (key == "AGENT_2" and "MOCK" in atype)
+                or (key == "AGENT_4" and "QA" in atype)
+                or (key == "AGENT_5" and "SEC" in atype)
+            ):
                 c.is_enabled = val
 
     db.commit()
@@ -546,36 +510,30 @@ def update_project_agent_config(
         }
     raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
 
-@router.get("/{project_id}/approvals/pending")
 
+@router.get("/{project_id}/approvals/pending")
 def get_pending_approvals(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     engine = ApprovalEngine(db=db)
 
     return engine.get_pending_approvals_for_project(project_id=project_id, db=db)
 
-@router.get("/{project_id}/messages")
 
+@router.get("/{project_id}/messages")
 def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     project = db.query(ProjectORM).filter_by(id=project_id).first()
 
     if not project:
-
         raise HTTPException(status_code=404, detail="Project not found")
 
     messages = []
 
     runs = (
-
         db.query(WorkflowRunORM)
-
         .filter_by(project_id=project_id)
-
         .order_by(WorkflowRunORM.created_at.asc())
-
         .all()
-
     )
 
     workspace_dir = Path("./workspace") / str(project_id)
@@ -589,35 +547,25 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
     has_code_on_disk = False
 
     if channel_dir.exists():
-
         skip_dirs = {".git", "node_modules", ".next", "bin", "obj", "__pycache__", ".vs"}
 
         for root, dirs, walk_files in os.walk(channel_dir):
-
             dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
 
             for fname in walk_files:
-
                 if Path(fname).suffix in (".cs", ".csproj", ".py", ".ts", ".tsx", ".js"):
-
                     has_code_on_disk = True
 
                     break
 
             if has_code_on_disk:
-
                 break
 
     if not runs:
-
         run = WorkflowRunORM(
-
             project_id=project_id,
-
             current_phase="SPECIFICATION",
-
             status="RUNNING",
-
         )
 
         db.add(run)
@@ -633,15 +581,10 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
     run_ids = [r.id for r in runs]
 
     all_checkpoints = (
-
         db.query(WorkflowCheckpointORM)
-
         .filter(WorkflowCheckpointORM.workflow_run_id.in_(run_ids))
-
         .order_by(WorkflowCheckpointORM.created_at.asc(), WorkflowCheckpointORM.version.asc())
-
         .all()
-
     )
 
     checkpoints = [cp for cp in all_checkpoints if cp.workflow_run_id == latest_run.id]
@@ -649,49 +592,36 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
     user_req = None
 
     generic_ack_phrases = {
-
         "Specifications approved. Proceed with full application implementation and build verification.",
-
         "Continue",
-
         "continue",
-
     }
 
     for cp in all_checkpoints:
-
         try:
-
             st = json.loads(cp.state_data)
 
             req_val = (st.get("user_requirement") or "").strip()
 
             if req_val and req_val not in generic_ack_phrases and len(req_val) > 30:
-
                 user_req = req_val
 
                 break
 
         except Exception:
-
             pass
 
     if not user_req:
-
         for cp in all_checkpoints:
-
             try:
-
                 st = json.loads(cp.state_data)
 
                 if st.get("user_requirement"):
-
                     user_req = st["user_requirement"]
 
                     break
 
             except Exception:
-
                 pass
 
     init_time_str = first_run.created_at.strftime("%H:%M") if first_run.created_at else "12:00"
@@ -707,7 +637,6 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
             .order_by(MessageORM.created_at.asc())
             .all()
         )
-
 
     approvals = (
         db.query(HumanApprovalORM)
@@ -746,33 +675,39 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
                 seen_approval_ids.add(app_id)
                 if app_id in app_map:
                     meta["status"] = app_map[app_id]
-                    meta["isApproved"] = (meta["status"] == "APPROVED")
+                    meta["isApproved"] = meta["status"] == "APPROVED"
 
-            messages.append({
-                "id": str(m.id),
-                "sender": m.sender_type,
-                "senderName": sender_names.get(m.sender_type, "AAISE Platform"),
-                "timestamp": m.created_at.strftime("%H:%M") if m.created_at else time_str,
-                "text": m.content,
-                **meta,
-            })
+            messages.append(
+                {
+                    "id": str(m.id),
+                    "sender": m.sender_type,
+                    "senderName": sender_names.get(m.sender_type, "AAISE Platform"),
+                    "timestamp": m.created_at.strftime("%H:%M") if m.created_at else time_str,
+                    "text": m.content,
+                    **meta,
+                }
+            )
 
-        pending_apps = [a for a in approvals if str(a.id) not in seen_approval_ids and a.status == "PENDING"]
+        pending_apps = [
+            a for a in approvals if str(a.id) not in seen_approval_ids and a.status == "PENDING"
+        ]
         if pending_apps:
             latest_app = pending_apps[-1]
-            messages.append({
-                "id": f"approval-{latest_app.id}",
-                "sender": "agent1",
-                "senderName": "Agent 1: Documentation Reviewer",
-                "timestamp": time_str,
-                "text": "Human approval required to proceed with code implementation.",
-                "isApprovalCard": True,
-                "approvalRequired": True,
-                "approvalId": str(latest_app.id),
-                "gateType": latest_app.gate_type,
-                "status": latest_app.status,
-                "isApproved": (latest_app.status == "APPROVED"),
-            })
+            messages.append(
+                {
+                    "id": f"approval-{latest_app.id}",
+                    "sender": "agent1",
+                    "senderName": "Agent 1: Documentation Reviewer",
+                    "timestamp": time_str,
+                    "text": "Human approval required to proceed with code implementation.",
+                    "isApprovalCard": True,
+                    "approvalRequired": True,
+                    "approvalId": str(latest_app.id),
+                    "gateType": latest_app.gate_type,
+                    "status": latest_app.status,
+                    "isApproved": (latest_app.status == "APPROVED"),
+                }
+            )
     else:
         # Fallback synthetic messages for legacy runs without MessageORM records
         if (not user_req or user_req.strip() in generic_ack_phrases) and specs_on_disk:
@@ -786,29 +721,33 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
                 user_req = f"Software requirements and architectural design for {project.name} ({project.target_framework})."
 
         if user_req:
-            messages.append({
-                "id": f"user-init-{first_run.id}",
-                "sender": "user",
-                "senderName": "You",
-                "timestamp": init_time_str,
-                "text": user_req,
-            })
+            messages.append(
+                {
+                    "id": f"user-init-{first_run.id}",
+                    "sender": "user",
+                    "senderName": "You",
+                    "timestamp": init_time_str,
+                    "text": user_req,
+                }
+            )
 
         has_spec = any("SPECIFICATION" in cp.checkpoint_key for cp in checkpoints) or specs_on_disk
         if has_spec:
-            messages.append({
-                "id": f"agent1-spec-{latest_run.id}",
-                "sender": "agent1",
-                "senderName": "Agent 1: Documentation Reviewer",
-                "timestamp": time_str,
-                "text": "I have analyzed your software requirements and generated technical specifications.",
-                "checklist": [
-                    "Analyzed architecture boundaries & target framework",
-                    "Extracted functional requirements & API contracts",
-                    "Created test specifications",
-                    "Generated Technical Design Document (TDD)",
-                ],
-            })
+            messages.append(
+                {
+                    "id": f"agent1-spec-{latest_run.id}",
+                    "sender": "agent1",
+                    "senderName": "Agent 1: Documentation Reviewer",
+                    "timestamp": time_str,
+                    "text": "I have analyzed your software requirements and generated technical specifications.",
+                    "checklist": [
+                        "Analyzed architecture boundaries & target framework",
+                        "Extracted functional requirements & API contracts",
+                        "Created test specifications",
+                        "Generated Technical Design Document (TDD)",
+                    ],
+                }
+            )
 
         if has_spec and not approvals:
             engine = ApprovalEngine(db=db)
@@ -822,52 +761,130 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
         if approvals:
             app = approvals[-1]
-            messages.append({
-                "id": f"approval-{app.id}",
-                "sender": "agent1",
-                "senderName": "Agent 1: Documentation Reviewer",
-                "timestamp": time_str,
-                "text": "Human approval required to proceed with code implementation.",
-                "isApprovalCard": True,
-                "approvalRequired": True,
-                "approvalId": str(app.id),
-                "gateType": app.gate_type,
-                "status": app.status,
-                "isApproved": (app.status == "APPROVED"),
-            })
+            messages.append(
+                {
+                    "id": f"approval-{app.id}",
+                    "sender": "agent1",
+                    "senderName": "Agent 1: Documentation Reviewer",
+                    "timestamp": time_str,
+                    "text": "Human approval required to proceed with code implementation.",
+                    "isApprovalCard": True,
+                    "approvalRequired": True,
+                    "approvalId": str(app.id),
+                    "gateType": app.gate_type,
+                    "status": app.status,
+                    "isApproved": (app.status == "APPROVED"),
+                }
+            )
 
     has_dev = any("DEVELOPMENT" in cp.checkpoint_key for cp in checkpoints) or has_code_on_disk
 
     if has_dev and not any(m.get("sender") == "agent3" and "checklist" in m for m in messages):
-
-        messages.append({
-
-            "id": f"agent3-{latest_run.id}",
-
-            "sender": "agent3",
-
-            "senderName": "Agent 3 (Main Coding Agent)",
-
-            "timestamp": time_str,
-
-            "text": "Channel application code synthesized, built with 0 errors, and committed to repository.",
-
-            "checklist": [
-
-                "Synthesized multi-file Clean Architecture structure",
-
-                "Generated project configuration",
-
-                "Verified build and dependency installation",
-
-            ],
-
-        })
+        messages.append(
+            {
+                "id": f"agent3-{latest_run.id}",
+                "sender": "agent3",
+                "senderName": "Agent 3 (Main Coding Agent)",
+                "timestamp": time_str,
+                "text": "Channel application code synthesized, built with 0 errors, and committed to repository.",
+                "checklist": [
+                    "Synthesized multi-file Clean Architecture structure",
+                    "Generated project configuration",
+                    "Verified build and dependency installation",
+                ],
+            }
+        )
 
     return {
-
         "run_id": str(latest_run.id),
-
         "messages": messages,
+    }
 
+
+class RunProjectRequest(BaseModel):
+    subsystem: str = "channel-app"
+
+
+class StopProjectRequest(BaseModel):
+    subsystem: str | None = None
+
+
+@router.post("/{project_id}/run")
+def run_project(
+    project_id: uuid.UUID,
+    req: RunProjectRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectORM).filter_by(id=project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    subsystem = req.subsystem if req else "channel-app"
+    mgr = ProjectProcessManager.get_instance()
+    try:
+        res = mgr.start_project(project.id, project.target_framework, subsystem=subsystem)
+        return res
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to launch project: {e}")
+
+
+@router.post("/{project_id}/stop")
+def stop_project(
+    project_id: uuid.UUID,
+    req: StopProjectRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectORM).filter_by(id=project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    subsystem = req.subsystem if req else None
+    mgr = ProjectProcessManager.get_instance()
+    res = mgr.stop_project(project.id, subsystem=subsystem)
+    return res
+
+
+@router.get("/{project_id}/status")
+def get_project_status(
+    project_id: uuid.UUID,
+    subsystem: str = "channel-app",
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectORM).filter_by(id=project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    mgr = ProjectProcessManager.get_instance()
+    channel_status = mgr.get_status(project.id, "channel-app")
+    frontend_status = mgr.get_status(project.id, "frontend")
+
+    # If specific subsystem requested
+    if subsystem and subsystem != "all":
+        return mgr.get_status(project.id, subsystem)
+
+    return {
+        "channel_app": channel_status,
+        "frontend": frontend_status,
+    }
+
+
+@router.get("/{project_id}/logs")
+def get_project_logs(
+    project_id: uuid.UUID,
+    subsystem: str = "channel-app",
+    tail: int = 100,
+    db: Session = Depends(get_db),
+):
+    project = db.query(ProjectORM).filter_by(id=project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    mgr = ProjectProcessManager.get_instance()
+    logs = mgr.get_logs(project.id, subsystem=subsystem, tail=tail)
+    return {
+        "project_id": str(project.id),
+        "subsystem": subsystem,
+        "logs": logs,
     }

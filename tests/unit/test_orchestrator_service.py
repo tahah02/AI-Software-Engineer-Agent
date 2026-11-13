@@ -134,9 +134,16 @@ async def test_orchestrator_runs_end_to_end_workflow(orchestrator_setup):
         tracker=tracker,
     )
 
-    result_state = await service.start_workflow(
+    spec_state = await service.start_workflow(
         project_id=project.id,
         user_requirement="Create an authentication service with login endpoint.",
+    )
+    assert spec_state["current_phase"] == "SPEC_APPROVAL"
+    assert spec_state["is_completed"] is False
+
+    result_state = await service.start_workflow(
+        project_id=project.id,
+        user_requirement="approved",
     )
 
     assert result_state["is_completed"] is True

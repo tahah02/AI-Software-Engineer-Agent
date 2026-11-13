@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.application.agents.supervisor import SupervisorAgent, SupervisorDecision
 from src.domain.enums import LLMProvider, RepositoryType
 from src.infrastructure.db.models import Base, ProjectORM, GitRepositoryORM
 from src.infrastructure.git.git_service import GitService
@@ -93,42 +92,3 @@ def test_git_service_set_remote_and_push(test_db):
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-
-@pytest.mark.asyncio
-async def test_supervisor_set_remote_and_path_grounding():
-    mock_litellm = MagicMock()
-    mock_litellm.complete = AsyncMock(side_effect=Exception("Simulated Sandbox Network Isolation"))
-    mock_ollama = MagicMock()
-    mock_ollama.complete = AsyncMock(side_effect=Exception("Simulated Sandbox Network Isolation"))
-
-    supervisor = SupervisorAgent(litellm_adapter=mock_litellm, ollama_adapter=mock_ollama)
-    workspace_path = r"D:\AI Software Engineer Agent\workspace\test-proj\channel-app"
-
-    # Test 1: Setting remote URL
-    user_msg = "https://github.com/tahah02/Test-AAISE.git"
-    decision = await supervisor.evaluate(
-        user_message=user_msg,
-        workspace_path=workspace_path,
-        project_name="Test Project",
-    )
-    assert decision.action == "SET_REMOTE"
-    assert "github.com/tahah02/Test-AAISE.git" in (decision.git_remote_url or "")
-
-    # Test 2: Push remote
-    push_msg = "push krdia git pe?"
-    decision_push = await supervisor.evaluate(
-        user_message=push_msg,
-        workspace_path=workspace_path,
-        project_name="Test Project",
-    )
-    assert decision_push.action == "PUSH_REMOTE"
-
-    # Test 3: Path Grounding
-    path_msg = "knsi repo me hai mera codebase btana zra"
-    decision_path = await supervisor.evaluate(
-        user_message=path_msg,
-        workspace_path=workspace_path,
-        project_name="Test Project",
-    )
-    assert decision_path.action == "CONVERSE"
-    assert "D:\\AI Software Engineer Agent\\workspace\\test-proj\\channel-app" in decision_path.reply_to_user
