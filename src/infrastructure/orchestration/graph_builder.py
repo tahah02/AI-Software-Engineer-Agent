@@ -16,6 +16,8 @@ def route_after_spec_approval(state: WorkflowState) -> str:
             req = state.get("user_requirement", "")
             if "Human Revision Request" not in req:
                 state["user_requirement"] = f"{req}\n\n[Human Revision Request]: {comments}"
+            # Clear comments so doc_reviewer executes once for this revision and pauses at END
+            state["spec_approval_comments"] = None
             return "doc_reviewer"
         return END
 

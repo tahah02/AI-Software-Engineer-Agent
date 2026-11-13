@@ -531,6 +531,7 @@ class OrchestratorService:
             else:
                 s["spec_approved"] = False
 
+            s["spec_approval_comments"] = None
             self.checkpoint_service.save_checkpoint(run.id, "SPECIFICATION", s)
 
             self.db.commit()
