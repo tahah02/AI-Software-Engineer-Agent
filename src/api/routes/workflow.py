@@ -722,10 +722,9 @@ def start_workflow_endpoint(
     # 1. Conversational Greeting check
     if is_conversational_or_greeting(req.user_requirement):
         reply = (
-            "Hello! I am your Autonomous AI Software Engineer (AAISE).\n\n"
-            "Please describe the software application or feature you would like to build "
-            "(e.g., *'Build a Student Management CRUD API with ASP.NET Core and SQLite'* or *'Create a customer billing microservice with FastAPI'*), "
-            "or attach an SRS/specification document, and our specialized agents will design, implement, test, and audit it for you!"
+            "Welcome to AAISE! 👋\n\n"
+            "Please upload your Software Requirements Specification (SRS) or describe the application "
+            "you want to build below. Our multi-agent engineering team will design, implement, test, and verify it for you."
         )
         if req.project_id:
             try:
@@ -950,10 +949,9 @@ async def start_workflow_multipart_endpoint(
 
     if not files and is_conversational_or_greeting(full_requirement):
         reply = (
-            "Hello! I am your Autonomous AI Software Engineer (AAISE).\n\n"
-            "Please describe the software application or feature you would like to build "
-            "(e.g., *'Build a Student Management CRUD API with ASP.NET Core and SQLite'* or *'Create a customer billing microservice with FastAPI'*), "
-            "or attach an SRS/specification document, and our specialized agents will design, implement, test, and audit it for you!"
+            "Welcome to AAISE! 👋\n\n"
+            "Please upload your Software Requirements Specification (SRS) or describe the application "
+            "you want to build below. Our multi-agent engineering team will design, implement, test, and verify it for you."
         )
         if project_id:
             try:
