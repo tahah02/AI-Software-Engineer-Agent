@@ -89,12 +89,13 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
         is_incremental = context.additional_metadata.get("is_incremental", False)
         subsystem_framework = context.additional_metadata.get("subsystem_framework") or "TYPESCRIPT_NEXTJS"
 
-        from src.api.routes.workflow import is_client_extension_intent
-        if not is_incremental and existing_tdd and is_client_extension_intent(input_text):
-            is_incremental = True
+        # A specification revision request is NEVER an incremental frontend extension
+        is_revision = "Human Revision Request" in input_text or "Requested Changes" in input_text
+        if is_revision:
+            is_incremental = False
 
         # Pass 1: Generate or incrementally evolve TECHNICAL_DESIGN.md in pure Markdown
-        if is_incremental and existing_tdd:
+        if is_incremental and existing_tdd and not is_revision:
             prompt_tdd = (
                 f"You are a Principal Enterprise Software Architect.\n"
                 f"The project already has an authoritative backend architecture fully specified in docs/TECHNICAL_DESIGN.md:\n\n"

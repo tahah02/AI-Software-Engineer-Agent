@@ -310,19 +310,16 @@ class OrchestratorService:
             "front-end",
             "front end",
             "client app",
-            "client",
-            "ui",
             "user interface",
             "web app",
             "web portal",
-            "portal",
             "dashboard",
             "mobile app",
-            "spa",
             "gui",
         ]
         is_client_ext = any(w in lower_req for w in client_tokens)
-        is_incremental = bool(backend_exists and is_client_ext)
+        is_revision = "Human Revision Request" in user_requirement or "Requested Changes" in user_requirement
+        is_incremental = bool(backend_exists and is_client_ext and not is_revision)
 
         subsystem_framework = None
         if is_incremental:

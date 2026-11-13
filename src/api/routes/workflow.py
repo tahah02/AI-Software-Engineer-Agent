@@ -281,15 +281,11 @@ def is_client_extension_intent(text: str) -> bool:
         r"\bfront-end\b",
         r"\bfront end\b",
         r"\bclient app\b",
-        r"\bclient\b",
-        r"\bui\b",
         r"\buser interface\b",
         r"\bweb app\b",
         r"\bweb portal\b",
-        r"\bportal\b",
         r"\bdashboard\b",
         r"\bmobile app\b",
-        r"\bspa\b",
         r"\bgui\b",
     ]
     return any(re.search(p, lower) for p in client_patterns)
