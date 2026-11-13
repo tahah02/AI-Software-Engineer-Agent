@@ -91,6 +91,9 @@ Your responsibility:
        - Input validation errors -> HTTP 400 Bad Request.
      * Health Checks: `builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();` mapped to `/health`.
      * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, use OpenApiReference with Type = ReferenceType.SecurityScheme (do NOT use ReferenceType.Security).
+     * Middleware & Security:
+       - If implementing custom `IAuthorizationMiddlewareResultHandler`, use boolean properties `authorizeResult.Challenged` (NEVER use `.Challenge` as it is a method group) and `authorizeResult.Forbidden`.
+       - If configuring Rate Limiting in `Program.cs`, ensure `using Microsoft.AspNetCore.RateLimiting;` is included at the top of the file.
    - `appsettings.json`:
      {
        "ConnectionStrings": { "DefaultConnection": "Data Source=app.db" },
@@ -420,7 +423,9 @@ class MainCodingAgent(BaseAgent):
                     content=(
                         f"The generated code failed compilation / verification. Errors:\n\n"
                         f"```\n{build_output}\n```\n\n"
-                        f"Please fix all errors and return the corrected files in the exact JSON format."
+                        f"Please fix all compilation errors and return ONLY the corrected or modified files in the exact JSON format:\n"
+                        f'{{"files": {{"path/to/ModifiedFile.cs": "complete corrected file contents..."}}}}\n'
+                        f"CRITICAL: Return ONLY the files that you modified to resolve the errors. Do NOT re-emit files that require no changes."
                     )
                 ))
 
