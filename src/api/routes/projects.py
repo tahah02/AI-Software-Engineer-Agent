@@ -579,17 +579,7 @@ def get_project_messages(project_id: uuid.UUID, db: Session = Depends(get_db)):
                 break
 
     if not runs:
-        run = WorkflowRunORM(
-            project_id=project_id,
-            current_phase="SPECIFICATION",
-            status="RUNNING",
-        )
-
-        db.add(run)
-
-        db.commit()
-
-        runs = [run]
+        return {"run_id": None, "messages": []}
 
     latest_run = runs[-1]
 

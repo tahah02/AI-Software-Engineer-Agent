@@ -365,23 +365,26 @@ export default function WorkspacePage() {
 
 
   // Fetch real artifacts, diff & persistent chat messages whenever selected project changes
-
   useEffect(() => {
-
     if (!selectedProject?.id) return;
 
     let isMounted = true;
 
+    // Reset local project state immediately to prevent stale project leakage
+    setMessages([]);
+    setArtifacts([]);
+    setCodeDiff("");
+    setCurrentRunId(null);
+    setActiveApprovalId(null);
+    setStreamingAgent(null);
+    setStreamStatus("ready");
+
     fetchProjectArtifacts(selectedProject.id).then((arts) => {
-
       if (isMounted) setArtifacts(arts);
-
     });
 
     fetchProjectDiff(selectedProject.id).then((diff) => {
-
       if (isMounted) setCodeDiff(diff);
-
     });
 
     fetchProjectBranches(selectedProject.id).then((bData) => {
@@ -405,83 +408,52 @@ export default function WorkspacePage() {
     });
 
     fetchProjectMessages(selectedProject.id).then((data) => {
-
       if (isMounted) {
-
         if (data && data.messages && data.messages.length > 0) {
-
           setMessages(data.messages);
-
         } else {
-
           setMessages([]);
-
         }
-
         if (data && data.run_id) {
-
           setCurrentRunId(data.run_id);
-
+        } else {
+          setCurrentRunId(null);
         }
-
       }
-
     });
 
     return () => {
-
       isMounted = false;
-
     };
-
   }, [selectedProject?.id]);
 
-
-
   // Auto-sync real-time status, messages & artifacts from backend
-
   useEffect(() => {
-
     if (!selectedProject?.id) return;
 
     const interval = setInterval(() => {
-
       fetchProjectMessages(selectedProject.id).then((data) => {
-
-        if (data && data.messages && data.messages.length > 0) {
-
-          setMessages((prev) => {
-
-            if (prev.length > data.messages.length) {
-
-              const last = prev[prev.length - 1];
-
-              if (last.sender === "user" || isSubmitting) {
-
-                return prev;
-
+        if (data) {
+          if (data.messages && data.messages.length > 0) {
+            setMessages((prev) => {
+              if (prev.length > data.messages.length) {
+                const last = prev[prev.length - 1];
+                if (last.sender === "user" || isSubmitting) {
+                  return prev;
+                }
               }
-
-            }
-
-            if (JSON.stringify(data.messages) !== JSON.stringify(prev)) {
-
-              return data.messages;
-
-            }
-
-            return prev;
-
-          });
-
+              if (JSON.stringify(data.messages) !== JSON.stringify(prev)) {
+                return data.messages;
+              }
+              return prev;
+            });
+          } else if (!isSubmitting) {
+            setMessages((prev) => (prev.length > 0 && prev.every(m => m.sender !== "user") ? [] : prev));
+          }
         }
-
       });
-
       fetchProjectArtifacts(selectedProject.id).then((arts) => setArtifacts(arts));
-
       fetchProjectDiff(selectedProject.id).then((d) => setCodeDiff(d));
-
     }, 2500);
 
     return () => clearInterval(interval);
@@ -1225,11 +1197,20 @@ export default function WorkspacePage() {
                       const name = prompt("Enter project name:", "New Project");
                       if (name) {
                         try {
-                          const p = await createProject(name, undefined, undefined, undefined, agentToggles);
-                          setProjects((prev) => [p, ...prev]);
-                          setSelectedProject(p);
-                          setShowProjectMenu(false);
-                          setMessages([]);
+                        const p = await createProject(name, undefined, undefined, undefined, agentToggles);
+                        setProjects((prev) => [p, ...prev]);
+                        setSelectedProject(p);
+                        setMessages([]);
+                        setArtifacts([]);
+                        setCodeDiff("");
+                        setCurrentRunId(null);
+                        setActiveApprovalId(null);
+                        setShowProjectMenu(false);
+                        setMessages([]);
+                        setArtifacts([]);
+                        setCodeDiff("");
+                        setCurrentRunId(null);
+                        setActiveApprovalId(null);
                         } catch (err: any) {
                           console.error("Create project failed:", err);
                           alert("Could not connect to backend API: " + (err?.message || "Server unreachable. Please check backend."));
@@ -1523,6 +1504,11 @@ export default function WorkspacePage() {
                         const p = await createProject(name, undefined, undefined, undefined, agentToggles);
                         setProjects((prev) => [p, ...prev]);
                         setSelectedProject(p);
+                        setMessages([]);
+                        setArtifacts([]);
+                        setCodeDiff("");
+                        setCurrentRunId(null);
+                        setActiveApprovalId(null);
                       } catch (err: any) {
                         console.error("Create project failed:", err);
                         alert("Could not connect to backend API: " + (err?.message || "Server unreachable. Please check backend."));
