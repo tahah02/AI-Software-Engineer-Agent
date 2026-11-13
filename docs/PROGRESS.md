@@ -1178,3 +1178,15 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - Restarted backend server daemon on port 8081.
 - **Verification**:
   - Live backend health check returned 200 OK.
+
+### [2026-11-14] Step 33: Enforce Mandatory Moq & Test Directives in xUnit Scaffolding (Completed)
+- **Problem**:
+  - `_execute_build_verification` compiles the entire solution (`channel-app.sln`), which includes `channel-app.Tests`.
+  - While `channel-app.csproj` compiled cleanly with 0 errors, `channel-app.Tests/UnitTests.cs` used `mockRepo.Setup(...).ReturnsAsync(...)` without importing `using Moq;`. Because `.ReturnsAsync` is an extension method in `Moq.ReturnsExtensions`, C# threw error CS1061.
+- **Changes Implemented**:
+  - `src/application/agents/main_coder.py`:
+    - Enforced mandatory using directives at the top of all generated test files (`using System;`, `using System.Threading.Tasks;`, `using Xunit;`, `using FluentAssertions;`, `using Moq;`).
+  - Reset SQLite database cleanly and restarted backend server daemon on port 8081.
+- **Verification**:
+  - Verified `dotnet build channel-app.sln` compiles both projects with 0 errors and 0 warnings.
+  - Verified live backend health check returns 200 OK.
