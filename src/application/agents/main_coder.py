@@ -68,7 +68,8 @@ Your responsibility:
    - Implement ONLY the entities, controllers, services, repositories, and external clients specified in the Technical Design Document.
    - NEVER create internal mock controllers (e.g. `MockVendorController.cs`) inside channel-app. All external vendor/mock APIs must be consumed via a typed `HttpClient` registered in `Program.cs` and configured with `MockVendor:BaseUrl` in `appsettings.json`.
 3. STRUCTURE & CLEAN ARCHITECTURE:
-   - `channel-app.csproj`: SDK project with:
+   - `channel-app.csproj`: SDK project targeting net8.0 with:
+     * `<DefaultItemExcludes>$(DefaultItemExcludes);channel-app.Tests/**</DefaultItemExcludes>` inside `<PropertyGroup>` (MANDATORY: Prevents test files from being compiled inside Web API)
      * Microsoft.EntityFrameworkCore.Sqlite
      * Microsoft.EntityFrameworkCore.Design
      * Swashbuckle.AspNetCore

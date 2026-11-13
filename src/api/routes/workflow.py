@@ -793,6 +793,9 @@ def start_workflow_endpoint(
             project.target_framework = detected_framework
             db.commit()
 
+    from src.api.routes.projects import ensure_project_agent_configs
+    ensure_project_agent_configs(project.id, db)
+
     run = (
         db.query(WorkflowRunORM)
         .filter_by(project_id=project.id)
@@ -1000,6 +1003,9 @@ async def start_workflow_multipart_endpoint(
         project.target_framework = detected_framework
 
         db.commit()
+
+    from src.api.routes.projects import ensure_project_agent_configs
+    ensure_project_agent_configs(project.id, db)
 
     run = (
         db.query(WorkflowRunORM)

@@ -192,9 +192,9 @@ class QAEngineerAgent(BaseAgent):
                 return success, output, trx_results
             except Exception as e:
                 logger.warning(f"Could not execute dotnet test: {e}")
-                return True, f"CLI runner completed with notice: {e}", []
+                return False, f"CLI runner execution error: {e}", []
 
-        return True, "No physical test project detected on disk.", []
+        return False, "No physical test project detected on disk.", []
 
     async def execute(self, context: AgentContext, input_text: str) -> AgentResult:
         # Load XUnit test specifications document
@@ -255,7 +255,7 @@ class QAEngineerAgent(BaseAgent):
 
         passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
         failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")
-        overall_status = "PASSED" if failed_count == 0 else "FAILED"
+        overall_status = "PASSED" if (failed_count == 0 and passed_count > 0) else "FAILED"
 
         # Locate channel repo path
         channel_repo_path: Path | None = None
@@ -285,8 +285,25 @@ class QAEngineerAgent(BaseAgent):
             results_list = trx_results
             passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
             failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")
-            overall_status = "PASSED" if failed_count == 0 else "FAILED"
+            overall_status = "PASSED" if (failed_count == 0 and passed_count > 0 and cli_success) else "FAILED"
             summary = f"xUnit test suite executed cleanly with {passed_count} passed and {failed_count} failed."
+        elif not cli_success:
+            passed_count = 0
+            failed_count = max(1, len(results_list))
+            overall_status = "FAILED"
+            summary = f"Physical test runner failed during compilation or execution: {cli_output[:300]}"
+            if not results_list:
+                results_list = [{
+                    "test_key": "BUILD-VERIFY",
+                    "status": "FAILED",
+                    "category": "BUILD",
+                    "endpoint": "/",
+                    "details": cli_output[:1000] if cli_output else "Compilation/Execution failed.",
+                }]
+        else:
+            passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
+            failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")
+            overall_status = "PASSED" if (failed_count == 0 and passed_count > 0) else "FAILED"
 
         defects_created = []
 
@@ -343,7 +360,7 @@ class QAEngineerAgent(BaseAgent):
             self.db.flush()
 
         return AgentResult(
-            success=(failed_count == 0),
+            success=(overall_status == "PASSED"),
             summary=summary,
             artifacts_created=written_test_files,
             metadata={
