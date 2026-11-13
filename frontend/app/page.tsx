@@ -376,7 +376,6 @@ export default function WorkspacePage() {
     setCodeDiff("");
     setCurrentRunId(null);
     setActiveApprovalId(null);
-    setStreamingAgent(null);
     setStreamStatus("ready");
 
     fetchProjectArtifacts(selectedProject.id).then((arts) => {
