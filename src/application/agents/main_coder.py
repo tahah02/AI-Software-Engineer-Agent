@@ -74,6 +74,9 @@ Your responsibility:
      * Microsoft.EntityFrameworkCore.Design
      * Swashbuckle.AspNetCore
      * Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore
+     * FluentValidation.AspNetCore
+     * Microsoft.AspNetCore.Authentication.JwtBearer
+     * System.IdentityModel.Tokens.Jwt
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
@@ -100,14 +103,14 @@ Your responsibility:
      * Use `[Required(ErrorMessage = "number1 is required")]` on nullable fields (e.g. `[Required] int? Number1`) so missing or non-numeric JSON fields result in authentic HTTP 400 Bad Request rather than silently defaulting to 0.
    - `Controllers/`: API controllers for designed channel endpoints. Controller methods must use `[ApiController]` and return typed `ActionResult<T>`.
    - `Services/` & `Repositories/`: Clean separation of business logic and database persistence.
-     * In calculation summation services, ALWAYS perform arithmetic operations inside a `checked { ... }` block to catch integer overflow and throw `OverflowException`.
+     * Implement ONLY and STRICTLY the exact entities, controllers, services, and repositories specified in docs/TECHNICAL_DESIGN.md. NEVER invent unrequested calculation services, foreign entities, or extraneous repositories.
      * Ensure method names, signatures, and contracts match the Technical Design Document.
    - `Clients/`: Dedicated typed client (e.g. `IMockVendorClient` and `MockVendorClient`) calling the external mock endpoint.
 4. EXECUTABLE XUNIT TEST PROJECT (`channel-app.Tests/`):
    - Scaffold a dedicated xUnit test project covering the test cases from the Test Specification:
    - `channel-app.Tests/channel-app.Tests.csproj`:
      * `<Project Sdk=\"Microsoft.NET.Sdk\">` targeting net8.0
-     * Package references: `Microsoft.NET.Test.Sdk`, `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.AspNetCore.Mvc.Testing`
+     * Package references: `Microsoft.NET.Test.Sdk`, `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Moq`
      * ProjectReference: `<ProjectReference Include=\"..\\channel-app.csproj\" />`
    - `channel-app.Tests/UnitTests.cs`:
      * xUnit unit tests verifying domain models, DTO validations, and calculation/business logic.
