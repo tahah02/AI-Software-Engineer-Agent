@@ -1,0 +1,23 @@
+Step 1: Agent 2 ko TDD Content Pass Karna
+orchestrator_service.py me s.get("tdd_path") ke bajaye execute_file_read(workspace, "docs/TECHNICAL_DESIGN.md") pass karenge.
+Agent 2 TDD padh kar FastAPI me exactly GET /api/mock/value return karega with {"value": 1} aur health check.
+
+Step 2: Agent 3 se Local Mock Controller Remove & Strict Contract Enforcement
+Agent 3 se MockVendorController.cs strictly delete karwayenge.
+appsettings.json me MockVendor:BaseUrl ko http://localhost:5100 (Agent 2 ki FastAPI service) se link karenge.
+DTOs me non-nullable [Required] [Range(int.MinValue, int.MaxValue)] int? Number1 lagayenge taake missing fields par genuine 400 Bad Request aaye.
+Global Exception Middleware add karenge jo HttpRequestException (Socket/503) ko 502 Bad Gateway aur timeout ko 504 Gateway Timeout me map kare.
+EnsureCreated() ke sath SQLite EF migrations create karenge.
+
+Step 3: Physical xUnit Test Project Scaffolding
+Agent 3 ya Agent 4 ko enforce karenge ke wo channel-app.Tests/ ka separate C# project banaye jisme:
+channel-app.Tests.csproj (with xunit, Moq, FluentAssertions, Microsoft.AspNetCore.Mvc.Testing).
+UnitTests.cs (UT-01 se UT-07).
+IntegrationTests.cs (IT-01 se IT-12).
+Taake jab user RAR download kare, to terminal me dotnet test chala kar 19 green checks apni aankhon se dekh sake!
+
+Step 4: Multi-Process Startup Script & Proper README
+Release ZIP ke andar ek simple run.ps1 ya docker-compose.yml aur README.md hoga:
+Port 5100 par Mock Vendor API chalay ga (uvicorn main:app --port 5100).
+Port 5001 par .NET Channel API chalay ga (dotnet run).
+dotnet test se saare unit aur contract tests physically verify honge.
