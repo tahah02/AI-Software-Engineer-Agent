@@ -1167,3 +1167,14 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Verified `gemini-3.5-flash-lite` direct connection returns 200 in ~1060ms.
   - Verified backend health check returns 200 OK.
+
+### [2026-11-14] Step 32: Conversational Greeting Message Polish (Completed)
+- **Problem**:
+  - The default conversational greeting message was verbose and cluttered.
+- **Changes Implemented**:
+  - `src/api/routes/workflow.py`:
+    - Updated initial greeting in both `start_workflow_endpoint` and `start_workflow_multipart_endpoint` to:
+      `Welcome to AAISE! 👋\n\nPlease upload your Software Requirements Specification (SRS) or describe the application you want to build below. Our multi-agent engineering team will design, implement, test, and verify it for you.`
+  - Restarted backend server daemon on port 8081.
+- **Verification**:
+  - Live backend health check returned 200 OK.
