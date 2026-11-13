@@ -157,6 +157,15 @@ class MockVendorDeveloperAgent(BaseAgent):
             repo_type=RepositoryType.MOCK_VENDOR_API,
             message=f"feat: implement vendor api mocks for task {context.task_id.hex[:8]}",
         )
+        try:
+            self.git_service.merge_branch(
+                project_id=context.project_id,
+                repo_type=RepositoryType.MOCK_VENDOR_API,
+                source_branch=branch_name,
+                target_branch="develop",
+            )
+        except Exception:
+            pass
 
         return AgentResult(
             success=True,

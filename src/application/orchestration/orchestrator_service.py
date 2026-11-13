@@ -999,6 +999,14 @@ class OrchestratorService:
                 bool(s.get("mock_commit_hash")) or (workspace_dir / "mock-vendor-api").exists()
             )
 
+            # Ensure primary integration branch 'develop' is checked out at release
+            try:
+                self.git_service.checkout_branch(project.id, RepositoryType.CHANNEL_APP, "develop")
+                if has_mock:
+                    self.git_service.checkout_branch(project.id, RepositoryType.MOCK_VENDOR_API, "develop")
+            except Exception:
+                pass
+
             readme_lines = [
                 f"# {project.name}",
                 f"\n**Target Framework**: `{project.target_framework or 'Generic'}`",

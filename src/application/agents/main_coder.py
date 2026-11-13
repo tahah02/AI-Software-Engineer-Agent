@@ -441,6 +441,16 @@ class MainCodingAgent(BaseAgent):
                     f"for task {context.task_id.hex[:8]}"
                 ),
             )
+            # In GitFlow, merge verified feature branch back into develop so develop remains the active integration branch
+            try:
+                self.git_service.merge_branch(
+                    project_id=context.project_id,
+                    repo_type=RepositoryType.CHANNEL_APP,
+                    source_branch=branch_name,
+                    target_branch="develop",
+                )
+            except Exception as e:
+                logger.warning(f"Could not merge {branch_name} into develop: {e}")
 
         subsystem_title = "Frontend client interface" if is_frontend else "Channel application"
         return AgentResult(

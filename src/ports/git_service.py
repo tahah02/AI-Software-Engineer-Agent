@@ -38,6 +38,15 @@ class IGitService(Protocol):
     ) -> None:
         ...
 
+    def merge_branch(
+        self,
+        project_id: uuid.UUID,
+        repo_type: RepositoryType | str,
+        source_branch: str,
+        target_branch: str = "develop",
+    ) -> None:
+        ...
+
     def commit_changes(
         self,
         project_id: uuid.UUID,

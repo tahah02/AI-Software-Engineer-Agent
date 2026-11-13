@@ -232,3 +232,25 @@ def test_git_service_custom_local_path(db_session, temp_workspace):
     resolved_path = service.get_repository_path(project.id, RepositoryType.CHANNEL_APP)
     assert resolved_path == str(custom_dir)
 
+
+def test_git_service_merge_branch(db_session, temp_workspace):
+    project = db_session.query(ProjectORM).first()
+    service = GitService(db=db_session, base_workspace_dir=temp_workspace)
+    service.initialize_repository(project.id, RepositoryType.CHANNEL_APP, "python")
+
+    # Create feature branch and commit file
+    feature_branch = "feature/test-feature-1"
+    service.create_branch(project.id, RepositoryType.CHANNEL_APP, feature_branch, base_branch="develop")
+    repo_path = Path(service.get_repository_path(project.id, RepositoryType.CHANNEL_APP))
+    (repo_path / "feature.txt").write_text("feature content", encoding="utf-8")
+    service.commit_changes(project.id, RepositoryType.CHANNEL_APP, "feat: implement test feature")
+
+    # Merge feature branch back to develop
+    service.merge_branch(project.id, RepositoryType.CHANNEL_APP, source_branch=feature_branch, target_branch="develop")
+
+    # Verify develop is checked out and has the feature file
+    current_branch = service.get_current_branch(project.id, RepositoryType.CHANNEL_APP)
+    assert current_branch == "develop"
+    assert (repo_path / "feature.txt").exists()
+
+

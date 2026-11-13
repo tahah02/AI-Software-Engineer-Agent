@@ -245,6 +245,14 @@ def get_project_branches(project_id: uuid.UUID, db: Session = Depends(get_db)):
 
     current_branch = git_service.get_current_branch(project.id, RepositoryType.CHANNEL_APP)
 
+    # If the repository was left on an internal agent feature branch, auto-realign to primary develop branch
+    if current_branch and current_branch.startswith("feature/") and "develop" in branches:
+        try:
+            git_service.checkout_branch(project.id, RepositoryType.CHANNEL_APP, "develop")
+            current_branch = "develop"
+        except Exception:
+            pass
+
     return {
         "project_id": str(project.id),
         "branches": branches,

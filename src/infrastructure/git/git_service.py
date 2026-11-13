@@ -225,6 +225,38 @@ class GitService(IGitService):
             except Exception:
                 pass
 
+    def merge_branch(
+        self,
+        project_id: uuid.UUID,
+        repo_type: RepositoryType | str,
+        source_branch: str,
+        target_branch: str = "develop",
+    ) -> None:
+        repo_path = Path(self.get_repository_path(project_id, repo_type))
+        if not (repo_path / ".git").exists():
+            return
+
+        try:
+            status_res = self._run_git(repo_path, ["status", "--porcelain"])
+            if status_res.stdout.strip():
+                self._run_git(repo_path, ["add", "-A"])
+                self._run_git(repo_path, ["commit", "-m", f"chore: auto-commit before merging {source_branch}"])
+        except Exception:
+            pass
+
+        self.checkout_branch(project_id, repo_type, target_branch)
+
+        try:
+            self._run_git(
+                repo_path,
+                ["merge", "--no-ff", "-m", f"chore: merge {source_branch} into {target_branch}", source_branch],
+            )
+        except Exception:
+            try:
+                self._run_git(repo_path, ["merge", source_branch])
+            except Exception:
+                pass
+
     def commit_changes(
         self,
         project_id: uuid.UUID,

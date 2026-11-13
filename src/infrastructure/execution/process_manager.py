@@ -7,6 +7,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -103,10 +104,14 @@ class ProjectProcessManager:
         cwd = proj_dir / "channel-app"
         if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
             port = find_available_port(5001)
-            sln = cwd / "channel-app.sln"
-            csproj = cwd / "channel-app.csproj"
-            target = str(csproj if csproj.exists() else (sln if sln.exists() else "."))
-            cmd = ["dotnet", "run", "--project", target, "--urls", f"http://127.0.0.1:{port}"]
+            csprojs = list(cwd.glob("*.csproj"))
+            if csprojs:
+                target = str(csprojs[0])
+            elif (cwd / "channel-app.sln").exists():
+                target = str(cwd / "channel-app.sln")
+            else:
+                target = "."
+            cmd = ["dotnet", "run", "--project", target, "--urls", f"http://localhost:{port}"]
             url = f"http://localhost:{port}/swagger"
             return cmd, cwd, port, url
 
@@ -154,7 +159,8 @@ class ProjectProcessManager:
             env = {
                 **os.environ,
                 "PORT": str(port),
-                "ASPNETCORE_URLS": f"http://127.0.0.1:{port}",
+                "ASPNETCORE_URLS": f"http://localhost:{port}",
+                "ASPNETCORE_ENVIRONMENT": "Development",
             }
 
             try:
