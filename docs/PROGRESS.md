@@ -1115,3 +1115,16 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - git diff src/application/agents/main_coder.py verified.
   - Live backend health check: GET http://localhost:8081/api/v1/health -> 200 OK.
+
+### [2026-11-13] Step 28: ASP.NET Core Authorization Challenged Property & Lightweight Healing Remediation (Completed)
+- **Problem**:
+  - In custom authorization middleware (ProblemDetailsAuthorizationMiddlewareResultHandler), Agent 3 generated `if (authorizeResult.Challenge)`, causing compiler error CS0428 (converting method group `Challenge` to non-delegate type `bool`).
+  - During self-healing attempts, Agent 3 re-emitted the full 20+ file solution, hitting the 8,000 max_tokens limit and corrupting the JSON response with truncation.
+- **Changes Implemented**:
+  - `src/application/agents/main_coder.py`:
+    - Injected ASP.NET Core directive enforcing boolean properties `authorizeResult.Challenged` and `authorizeResult.Forbidden`, warning against method group `.Challenge`.
+    - Enforced `using Microsoft.AspNetCore.RateLimiting;` in Program.cs prompt.
+    - Optimized the healing loop prompt to demand ONLY the modified/corrected files in `{"files": {"path/to/File.cs": "..."}}`, preventing truncation and reducing token footprint by ~90%.
+- **Verification**:
+  - Verified `dotnet build` succeeds with 0 errors and 0 warnings.
+  - Restarted backend server cleanly on port 8081 (verified 200 OK).
