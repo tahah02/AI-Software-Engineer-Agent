@@ -136,12 +136,14 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 f"   - 6. Production Readiness (Rate limiting, structured logging, correlation IDs, health checks)\n"
                 f"   - 7. Git Workflow & Branching Strategy\n"
                 f"   - 8. Requirement Traceability Matrix (Mapping every FR-xx and NFR-xx from the SRS)\n\n"
-                f"3. NORMATIVE IMPLEMENTATION SPECIFICATIONS:\n"
-                f"   - DateTime Persistence: Configure explicit UTC roundtrip conversion for DateTime properties.\n"
+                f"3. NORMATIVE ENTERPRISE IMPLEMENTATION SPECIFICATIONS:\n"
+                f"   - SQLite PRAGMA & Interceptor: Mandate 'SqlitePragmaInterceptor' (DbConnectionInterceptor) in EF Core configuration to strictly enforce PRAGMA foreign_keys = ON; and PRAGMA journal_mode = WAL; on every connection.\n"
+                f"   - Reverse Proxy & Headers: Mandate app.UseForwardedHeaders() at the very top of Program.cs middleware pipeline.\n"
+                f"   - Strict JSON & Duplicate Key Check: Mandate Utf8JsonReader duplicate-property validation or strict System.Text.Json options (JsonUnmappedMemberHandling.Disallow, JsonNumberHandling.Strict) to reject duplicate JSON keys with HTTP 400 Bad Request.\n"
+                f"   - DateTime Persistence: Mandate explicit UTC roundtrip 'ValueConverter<DateTime, DateTime>' for all entity DateTime properties.\n"
                 f"   - Unicode Counting: Validate string length boundaries using Unicode scalar counting (EnumerateRunes().Count()).\n"
-                f"   - Strict JSON Serialization: Configure JsonUnmappedMemberHandling.Disallow and JsonNumberHandling.Strict, rejecting duplicate properties.\n"
-                f"   - RFC 9457 Problem Details: Ensure all error responses including 401/403 emit application/problem+json.\n"
-                f"   - Permissions Claims: Support both scalar string and array permissions claims.\n"
+                f"   - RFC 9457 Problem Details: Ensure all error responses including 400, 401, 403, 404, 409, 422, 500, 502, 503, 504 emit application/problem+json.\n"
+                f"   - Permissions Claims: Support both scalar string and array permissions claims for 'student:create'.\n"
                 f"   - External Vendor Scope: If the system has NO external third-party vendor APIs, explicitly state: 'Mock Vendor Server: Not Applicable / Excluded (Agent 2 Bypassed)'.\n\n"
                 f"Output pure Markdown only. Do not wrap in JSON."
             )
@@ -156,7 +158,7 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 {"role": "user", "content": prompt_tdd},
             ],
             temperature=0.2,
-            max_tokens=8000,
+            max_tokens=16000,
         )
 
         response_tdd = await adapter.complete(request_tdd)
@@ -233,7 +235,7 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 {"role": "user", "content": prompt_test},
             ],
             temperature=0.2,
-            max_tokens=8000,
+            max_tokens=16000,
         )
 
         response_test = await adapter.complete(request_test)
