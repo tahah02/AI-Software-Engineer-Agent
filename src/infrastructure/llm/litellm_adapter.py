@@ -144,9 +144,10 @@ class LiteLLMAdapter(ILLMGateway):
         start_time = time.perf_counter()
         attempts = 0
         max_attempts = max(1, request.max_retries + 1)
+        transient_max_attempts = max(max_attempts, 6)
         last_exception: Exception | None = None
 
-        while attempts < max_attempts:
+        while attempts < transient_max_attempts:
             attempts += 1
             try:
                 response = await litellm.acompletion(**kwargs)
@@ -256,11 +257,16 @@ class LiteLLMAdapter(ILLMGateway):
                     message=f"Provider error: {clean_msg}",
                 )
                 # Retry transient connection, DNS/socket, and 503 overload / high demand errors
-                transient_signals = ("connection", "503", "overloaded", "unavailable", "timeout", "getaddrinfo", "socket", "dns", "ssl", "high demand", "spikes in demand")
-                transient_max = max(max_attempts, 4)
-                if attempts < transient_max and any(k in clean_msg.lower() for k in transient_signals):
-                    backoff = 2.0 * attempts if any(k in clean_msg.lower() for k in ("getaddrinfo", "dns", "socket")) else 1.5 * attempts
-                    logger.warning(f"Transient provider error on {model_name} (attempt {attempts}/{transient_max}). Backing off {backoff:.1f}s before retry.")
+                transient_signals = (
+                    "connection", "503", "overloaded", "unavailable", "timeout",
+                    "getaddrinfo", "socket", "dns", "ssl", "high demand", "spikes in demand"
+                )
+                if attempts < transient_max_attempts and any(k in clean_msg.lower() for k in transient_signals):
+                    backoff = 2.0 + (1.5 * attempts)
+                    logger.warning(
+                        f"Transient provider error on {model_name} (attempt {attempts}/{transient_max_attempts}). "
+                        f"Backing off {backoff:.1f}s before retry."
+                    )
                     await asyncio.sleep(backoff)
                     continue
                 break
