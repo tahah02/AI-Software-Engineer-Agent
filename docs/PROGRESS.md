@@ -1208,3 +1208,20 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Verified clean compilation and git diff.
   - Live backend health check returned 200 OK.
+
+### [2026-11-14] Step 35: Removal of Git Header Dropdown & Resilient 503 Spike Retry Loop (Completed)
+- **Problem**:
+  - A Git branch selector dropdown displaying `develop` and `main` was persisting in the top header navigation bar, cluttering the UI.
+  - Google Gemini transient 503 "high demand" errors were aborting after 3 attempts because the outer while loop in `litellm_adapter.py` was constrained to `attempts < max_attempts` (3), preventing the extended transient retry logic from executing.
+- **Changes Implemented**:
+  - `frontend/app/page.tsx`:
+    - Removed the Git branch selector badge and dropdown container from the top header navigation bar.
+    - Initialized `availableBranches` state to `[]` instead of `["develop", "main"]`.
+  - `src/infrastructure/llm/litellm_adapter.py`:
+    - Decoupled `transient_max_attempts = max(max_attempts, 6)` and expanded the outer while loop condition to `while attempts < transient_max_attempts:`.
+    - Added progressive backoff (`2.0 + (1.5 * attempts)`) for transient signals (`503`, `high demand`, `spikes in demand`, `overloaded`, `unavailable`, `connection`, `socket`, `dns`), allowing brief server spikes to resolve seamlessly without crashing the workflow.
+  - Reset SQLite database cleanly and restarted backend server daemon on port 8081.
+- **Verification**:
+  - Verified `git diff` and committed changes on `Fixes-Branch`.
+  - Verified Next.js hot-reloaded and top header renders cleanly without branch dropdown.
+  - Verified live backend health check returns 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
