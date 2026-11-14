@@ -1190,3 +1190,21 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
 - **Verification**:
   - Verified `dotnet build channel-app.sln` compiles both projects with 0 errors and 0 warnings.
   - Verified live backend health check returns 200 OK.
+
+### [2026-11-14] Step 34: Mandate Enterprise Patterns in Initial TDD Generation & Token Limit Expansion (Completed)
+- **Problem**:
+  - On initial SRS upload, Agent 1 omitted specialized enterprise patterns (SqlitePragmaInterceptor for WAL/foreign keys, UseForwardedHeaders for reverse proxies, Utf8JsonReader for duplicate JSON keys, UTC ValueConverters) because they were not explicitly mandated in the initial architectural directives.
+  - TDD and Test Spec generation were capped at 8,000 tokens, risking truncation during exhaustive 38-test specification generation.
+- **Changes Implemented**:
+  - `src/application/agents/doc_reviewer.py`:
+    - Injected explicit normative enterprise specifications into `prompt_tdd`:
+      - `SqlitePragmaInterceptor` (DbConnectionInterceptor) enforcing `PRAGMA foreign_keys = ON;` and `PRAGMA journal_mode = WAL;`.
+      - `app.UseForwardedHeaders()` at the very top of Program.cs.
+      - `Utf8JsonReader` duplicate-key validation / strict JSON rejection.
+      - Explicit UTC roundtrip `ValueConverter<DateTime, DateTime>`.
+      - Complete 38-test suite traceability.
+    - Expanded `max_tokens` from 8,000 to **16,000** for both TDD and Test Spec generation.
+  - Reset SQLite database cleanly and restarted backend server daemon on port 8081.
+- **Verification**:
+  - Verified clean compilation and git diff.
+  - Live backend health check returned 200 OK.
