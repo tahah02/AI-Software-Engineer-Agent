@@ -273,10 +273,18 @@ class LiteLLMAdapter(ILLMGateway):
 
         if last_exception:
             fb_model = getattr(request, "fallback_model", None)
-            fb_provider = getattr(request, "fallback_provider", None)
-            if fb_model and fb_model != model_name:
+            fb_provider_raw = getattr(request, "fallback_provider", None)
+            if fb_provider_raw is not None and not isinstance(fb_provider_raw, LLMProvider):
+                try:
+                    fb_provider = LLMProvider(str(fb_provider_raw).lower())
+                except Exception:
+                    fb_provider = request.provider
+            else:
+                fb_provider = fb_provider_raw or request.provider
+
+            if fb_model and (fb_model != model_name or fb_provider != request.provider):
                 fallback_req = LLMRequest(
-                    provider=fb_provider or request.provider,
+                    provider=fb_provider,
                     model=fb_model,
                     messages=request.messages,
                     tools=request.tools,
@@ -285,10 +293,12 @@ class LiteLLMAdapter(ILLMGateway):
                     max_tokens=request.max_tokens,
                     timeout_seconds=request.timeout_seconds,
                     max_retries=request.max_retries,
+                    fallback_model=None,
+                    fallback_provider=None,
                 )
                 logger.warning(
-                    f"Primary model {model_name} failed ({last_exception}). "
-                    f"Failing over to fallback {request.fallback_model}..."
+                    f"Primary model {request.provider.value}/{model_name} failed ({last_exception}). "
+                    f"Failing over to fallback {fb_provider.value}/{fb_model}..."
                 )
                 return await self.complete(fallback_req)
             raise last_exception
