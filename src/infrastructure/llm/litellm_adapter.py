@@ -144,7 +144,8 @@ class LiteLLMAdapter(ILLMGateway):
         start_time = time.perf_counter()
         attempts = 0
         max_attempts = max(1, request.max_retries + 1)
-        transient_max_attempts = max(max_attempts, 6)
+        has_fallback = bool(getattr(request, "fallback_model", None))
+        transient_max_attempts = max(max_attempts, 3 if has_fallback else 5)
         last_exception: Exception | None = None
 
         while attempts < transient_max_attempts:

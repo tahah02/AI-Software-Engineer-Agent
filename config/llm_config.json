@@ -21,7 +21,7 @@
     },
     "gemini": {
       "default_model": "gemini-3.5-flash-lite",
-      "fallback_model": null,
+      "fallback_model": "gemini-3.1-flash-lite",
       "available_models": [
         "gemini-3-flash-preview",
         "gemini-3.5-flash-lite",
@@ -85,32 +85,32 @@
     "AGENT_1": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "groq",
-      "fallback_model": "openai/gpt-oss-120b"
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
     },
     "AGENT_2": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "groq",
-      "fallback_model": "openai/gpt-oss-120b"
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
     },
     "AGENT_3": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "groq",
-      "fallback_model": "openai/gpt-oss-120b"
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
     },
     "AGENT_4": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "groq",
-      "fallback_model": "openai/gpt-oss-120b"
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
     },
     "AGENT_5": {
       "provider": "gemini",
       "model": "gemini-3.5-flash-lite",
-      "fallback_provider": "groq",
-      "fallback_model": "openai/gpt-oss-120b"
+      "fallback_provider": "gemini",
+      "fallback_model": "gemini-3.1-flash-lite"
     }
   }
 }
