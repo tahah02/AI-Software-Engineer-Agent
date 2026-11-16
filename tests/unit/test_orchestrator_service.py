@@ -28,7 +28,7 @@ class FakeOrchestratorLLMAdapter(ILLMGateway):
         # Agent 1 Doc Reviewer response
         if "Agent 1" in prompt_content:
             data = {
-                "technical_design": "# Technical Design Document\n\n## Endpoints\n- POST /api/v1/auth/login",
+                "technical_design": "# Technical Design Document\n\n## Endpoints\n- POST /api/v1/auth/login\n\n## Dependencies\n- Mock Vendor API for upstream verification",
                 "test_spec": "# XUnit Test Specifications\n\n- TC01: Login returns 200",
             }
         # Agent 2 Mock Dev response

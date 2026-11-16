@@ -67,7 +67,7 @@ def test_litellm_adapter_resolves_json_defaults():
     groq_def = adapter.get_default_model(LLMProvider.GROQ)
     openrouter_def = adapter.get_default_model(LLMProvider.OPENROUTER)
 
-    assert gemini_def in ("gemini-3-flash-preview", "gemini-3.8-flash")
+    assert gemini_def in ("gemini-3-flash-preview", "gemini-3.8-flash", "gemini-3.5-flash-lite")
     assert groq_def == "openai/gpt-oss-120b"
     assert openrouter_def == "openai/gpt-oss-120b"
 

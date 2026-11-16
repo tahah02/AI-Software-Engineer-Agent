@@ -281,28 +281,30 @@ class QAEngineerAgent(BaseAgent):
                 execute_file_write(str(target_root), rel_p, code_content)
                 written_test_files.append(rel_p)
 
-        # Run physical test runner
-        cli_success, cli_output, trx_results = self._execute_cli_tests(target_root)
-
-        if trx_results:
-            results_list = trx_results
-            passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
-            failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")
-            overall_status = "PASSED" if (failed_count == 0 and passed_count > 0 and cli_success) else "FAILED"
-            summary = f"xUnit test suite executed cleanly with {passed_count} passed and {failed_count} failed."
-        elif not cli_success:
-            passed_count = 0
-            failed_count = max(1, len(results_list))
-            overall_status = "FAILED"
-            summary = f"Physical test runner failed during compilation or execution: {cli_output[:300]}"
-            if not results_list:
-                results_list = [{
-                    "test_key": "BUILD-VERIFY",
-                    "status": "FAILED",
-                    "category": "BUILD",
-                    "endpoint": "/",
-                    "details": cli_output[:1000] if cli_output else "Compilation/Execution failed.",
-                }]
+        # Run physical test runner if test project exists
+        cli_output = ""
+        has_physical_project = bool(list(target_root.glob("**/*[Tt]est*/*.csproj")) or list(target_root.glob("*[Tt]est*/*.csproj")))
+        if has_physical_project:
+            cli_success, cli_output, trx_results = self._execute_cli_tests(target_root)
+            if trx_results:
+                results_list = trx_results
+                passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
+                failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")
+                overall_status = "PASSED" if (failed_count == 0 and passed_count > 0 and cli_success) else "FAILED"
+                summary = f"xUnit test suite executed cleanly with {passed_count} passed and {failed_count} failed."
+            elif not cli_success:
+                passed_count = 0
+                failed_count = max(1, len(results_list))
+                overall_status = "FAILED"
+                summary = f"Physical test runner failed during compilation or execution: {cli_output[:300]}"
+                if not results_list:
+                    results_list = [{
+                        "test_key": "BUILD-VERIFY",
+                        "status": "FAILED",
+                        "category": "BUILD",
+                        "endpoint": "/",
+                        "details": cli_output[:1000] if cli_output else "Compilation/Execution failed.",
+                    }]
         else:
             passed_count = sum(1 for r in results_list if r.get("status") == "PASSED")
             failed_count = sum(1 for r in results_list if r.get("status") != "PASSED")

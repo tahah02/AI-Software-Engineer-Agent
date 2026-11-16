@@ -1285,3 +1285,25 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - **Agent 5**: Completed SAST security audit with 0 vulnerabilities (`PASSED`).
   - **Bug Fix**: Added missing `import re` in `src/application/agents/qa_engineer.py` that caused a NameError during regex evaluation of CLI output.
   - **Release**: ZIP package generated and ready for export.
+
+### [2026-11-17] Step 40: TDD & Test-Spec Driven Clean Architecture Synthesis with Architectural Completeness Gate (Completed)
+- **Problem**:
+  - In Visual Studio Solution Explorer, synthesized `channel-app` contained only `Program.cs`, `appsettings.json`, and an empty `AppDbContext.cs`. All domain layers (`Controllers/`, `Models/`, `DTOs/`, `Repositories/`, `Services/`) were omitted.
+  - Root cause was the few-shot JSON response schema template in `main_coder.py`, which only illustrated top-level files (`channel-app.csproj`, `Program.cs`, `appsettings.json`). The LLM anchored to the example keys and omitted domain directories.
+  - The build gate previously only checked `dotnet build` return code, which passed on an empty project.
+- **Changes Implemented**:
+  - `src/application/agents/main_coder.py`:
+    - Updated C# prompt directives: explicitly mandates generating separate physical files for EVERY Clean Architecture layer directly from `## Technical Design Document` (POCO domain entities under `Models/`, DbSets under `Data/AppDbContext.cs`, DTOs under `DTOs/`, data persistence under `Repositories/`, business logic under `Services/`, and endpoints under `Controllers/`).
+    - Enforced real xUnit test implementation directly from `## Authoritative Test Specifications` (`docs/XUNIT_TEST_SPEC.md`) covering UT-01..UT-12 in `channel-app.Tests/UnitTests.cs` and IT-01..IT-14 in `channel-app.Tests/IntegrationTests.cs`, strictly forbidding dummy assertions.
+    - Updated few-shot JSON schema template illustrating all domain keys (`Models/Student.cs`, `Data/AppDbContext.cs`, `DTOs/StudentDtos.cs`, `Repositories/IStudentRepository.cs`, `Services/IStudentService.cs`, `Controllers/StudentsController.cs`, etc.).
+    - Implemented **Architectural Completeness Verification Gate** in `_execute_build_verification`: validates that `Controllers/*.cs`, `Models/*.cs`, and `AppDbContext.cs` (with `DbSet<`) exist. Fails the verification and triggers self-healing retry loop if any architectural layer is omitted.
+  - `src/application/agents/mock_developer.py`:
+    - Updated `vendor_indicators` to include `"third party"`, `"third-party"`, and `"vendor"` to correctly detect dependency specifications.
+  - `src/application/agents/qa_engineer.py`:
+    - Separated physical runner execution (`has_physical_project`) from contract-only specifications; initialized `cli_output = ""`.
+  - Wiped SQLite database cleanly via `scripts/wipe_db.py`.
+  - Restarted backend daemon on port 8081 and Next.js frontend daemon on port 8080.
+- **Verification**:
+  - Executed full unit test suite: **118 passed, 0 failed in 42.95s**.
+  - Verified live backend health check: 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
+  - Verified live frontend portal: 200 OK (`http://localhost:8080`).

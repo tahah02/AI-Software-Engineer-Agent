@@ -63,11 +63,15 @@ Respond ONLY with a valid JSON object containing relative paths and file content
 Target Framework: C# ASP.NET Core Web API (.NET 8 / 9) with SQLite, EF Core, and Swagger.
 
 Your responsibility:
-1. Read the Technical Design Document and implement complete, production-ready, readable multi-file C# source code.
+1. READ AND STRICTLY ADHERE TO:
+   - `## Technical Design Document`: Contains the authoritative system architecture, domain models (Section 2), API specifications and DTOs (Section 3), security (Section 4), and persistence rules.
+   - `## Authoritative Test Specifications`: Contains the exact Unit Tests (UT-01..UT-12) and Integration Tests (IT-01..IT-14) that MUST be implemented in the test suite.
 2. STRICT ARCHITECTURAL & SCOPE CONSTRAINTS:
    - Implement ONLY the entities, controllers, services, repositories, and external clients specified in the Technical Design Document.
    - NEVER create internal mock controllers (e.g. `MockVendorController.cs`) inside channel-app. All external vendor/mock APIs must be consumed via a typed `HttpClient` registered in `Program.cs` and configured with `MockVendor:BaseUrl` in `appsettings.json`.
-3. STRUCTURE & CLEAN ARCHITECTURE:
+3. STRUCTURE & CLEAN ARCHITECTURE (MANDATORY MULTI-FILE CODE GENERATION):
+   You MUST generate a complete, working, enterprise-grade project with separate files for EVERY Clean Architecture layer as designed in `docs/TECHNICAL_DESIGN.md`. DO NOT omit any layer! DO NOT collapse logic into Program.cs!
+   
    - `channel-app.csproj`: SDK project targeting net8.0 with:
      * `<DefaultItemExcludes>$(DefaultItemExcludes);channel-app.Tests/**</DefaultItemExcludes>` inside `<PropertyGroup>` (MANDATORY: Prevents test files from being compiled inside Web API)
      * Microsoft.EntityFrameworkCore.Sqlite
@@ -77,19 +81,42 @@ Your responsibility:
      * FluentValidation.AspNetCore
      * Microsoft.AspNetCore.Authentication.JwtBearer
      * System.IdentityModel.Tokens.Jwt
+   - `Models/`:
+     * Generate POCO domain entities for EACH entity specified in Section 2 of the TDD (e.g. `Models/Student.cs`).
+     * Include all fields, data types, Guid primary keys, required properties, and relationships.
+   - `Data/AppDbContext.cs`:
+     * EF Core DbContext inheriting from `DbContext`.
+     * Explicit `public DbSet<TEntity> TEntities { get; set; } = null!;` for EVERY domain entity in Section 2 of the TDD.
+     * `OnModelCreating(ModelBuilder modelBuilder)` configuring table names, primary keys, indexes (e.g. unique email), foreign keys, and UTC DateTime value converters as specified in the TDD.
+     * Configure SqlitePragmaInterceptor if required by the TDD.
+   - `DTOs/`:
+     * Dedicated request and response records/classes with data annotations / validation attributes matching Section 3 & 5 of the TDD (e.g. `DTOs/CreateStudentRequest.cs`, `DTOs/StudentResponse.cs`).
+     * Use `[Required(ErrorMessage = "... is required")]` on nullable fields so missing fields result in authentic HTTP 400 Bad Request.
+   - `Repositories/`:
+     * Repository interface (e.g. `Repositories/IStudentRepository.cs`) and implementation (e.g. `Repositories/StudentRepository.cs`).
+     * Methods for persistence operations (e.g. `GetByIdAsync`, `GetByEmailAsync`, `AddAsync`, `SaveChangesAsync`) accepting `CancellationToken`.
+   - `Services/`:
+     * Service interface (e.g. `Services/IStudentService.cs`) and implementation (e.g. `Services/StudentService.cs`).
+     * Business logic, normalization (e.g. lowercasing email), validation, and coordination with repositories.
+   - `Controllers/`:
+     * ASP.NET Core API controllers (e.g. `Controllers/StudentsController.cs`).
+     * Annotated with `[ApiController]` and route attribute matching TDD Section 3 (e.g. `[Route("api/v1/students")]`).
+     * Injects the corresponding service or repository.
+     * Implements all HTTP action methods (`[HttpPost]`, `[HttpGet("{id}")]`, `[HttpGet]`, etc.) returning typed `ActionResult<T>` or `IActionResult` with proper HTTP status codes (201 Created with Location header, 200 OK, 400 Bad Request ProblemDetails, 404 Not Found, 409 Conflict).
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
+     * Registers dependency injection for all Repositories (`builder.Services.AddScoped<IStudentRepository, StudentRepository>();`) and Services (`builder.Services.AddScoped<IStudentService, StudentService>();`).
+     * Configures controllers (`builder.Services.AddControllers();`).
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
-     * Configures typed `HttpClient` for external vendor service:
-       `builder.Services.AddHttpClient<IMockVendorClient, MockVendorClient>(c => { c.BaseAddress = new Uri(builder.Configuration["MockVendor:BaseUrl"] ?? "http://localhost:5100"); c.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int>("MockVendor:TimeoutSeconds", 10)); });`
+     * Configures typed `HttpClient` for external vendor service (if applicable per TDD).
      * Configures comprehensive global exception handling middleware that translates exceptions using authentic ASP.NET Core StatusCodes constants:
-       - Upstream timeouts (`TaskCanceledException`, `TimeoutException`) -> StatusCodes.Status504GatewayTimeout (HTTP 504).
-       - Upstream connection failures (`HttpRequestException`, `SocketException`) -> StatusCodes.Status502BadGateway (HTTP 502).
-       - Database unavailability / `SqliteException` -> StatusCodes.Status503ServiceUnavailable (HTTP 503).
-       - Arithmetic overflow -> StatusCodes.Status422UnprocessableEntity (HTTP 422).
-       - Missing records (`KeyNotFoundException`) -> StatusCodes.Status404NotFound (HTTP 404).
-       - Duplicate records / conflict -> StatusCodes.Status409Conflict (HTTP 409).
-       - Input validation / bad request -> StatusCodes.Status400BadRequest (HTTP 400).
+       - Upstream timeouts (`TaskCanceledException`, `TimeoutException`) -> StatusCodes.Status504GatewayTimeout (504 Gateway Timeout).
+       - Upstream connection failures (`HttpRequestException`, `SocketException`) -> StatusCodes.Status502BadGateway (502 Bad Gateway).
+       - Database unavailability / `SqliteException` -> StatusCodes.Status503ServiceUnavailable (503 Service Unavailable).
+       - Arithmetic overflow (`OverflowException` from `checked` summation) -> StatusCodes.Status422UnprocessableEntity (422 Unprocessable Entity).
+       - Missing records (`KeyNotFoundException`) -> StatusCodes.Status404NotFound (404 Not Found).
+       - Duplicate records / conflict -> StatusCodes.Status409Conflict (409 Conflict).
+       - Input validation / bad request -> StatusCodes.Status400BadRequest (400 Bad Request).
        (MANDATORY: NEVER invent non-existent status names like Status400BadGateway).
      * Health Checks: `builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();` mapped to `/health`.
      * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, configure security requirement using OpenApiSecurityScheme:
@@ -103,42 +130,43 @@ Your responsibility:
        "MockVendor": { "BaseUrl": "http://localhost:5100", "TimeoutSeconds": 10 }
      }
    - `Properties/launchSettings.json`: Configured for port 5001 with launchUrl: "swagger".
-   - `Models/`: Clean domain entities exactly as specified in the TDD.
-   - `Data/AppDbContext.cs`: EF Core DbContext with explicit DbSets.
-   - `DTOs/`: Dedicated request and response records/classes with strict input validation attributes:
-     * Use `[Required(ErrorMessage = "number1 is required")]` on nullable fields (e.g. `[Required] int? Number1`) so missing or non-numeric JSON fields result in authentic HTTP 400 Bad Request rather than silently defaulting to 0.
-   - `Controllers/`: API controllers for designed channel endpoints. Controller methods must use `[ApiController]` and return typed `ActionResult<T>`.
-   - `Services/` & `Repositories/`: Clean separation of business logic and database persistence.
-     * Implement ONLY and STRICTLY the exact entities, controllers, services, and repositories specified in docs/TECHNICAL_DESIGN.md. NEVER invent unrequested calculation services, foreign entities, or extraneous repositories.
-     * Ensure method names, signatures, and contracts match the Technical Design Document.
-   - `Clients/`: Dedicated typed client (e.g. `IMockVendorClient` and `MockVendorClient`) calling the external mock endpoint.
-4. EXECUTABLE XUNIT TEST PROJECT (`channel-app.Tests/`):
-   - Scaffold a dedicated xUnit test project covering the test cases from the Test Specification:
+
+4. EXECUTABLE XUNIT TEST SUITE (`channel-app.Tests/`):
+   - Scaffold a dedicated xUnit test project covering the REAL test cases from `## Authoritative Test Specifications`:
    - `channel-app.Tests/channel-app.Tests.csproj`:
      * `<Project Sdk=\"Microsoft.NET.Sdk\">` targeting net8.0
      * Package references: `Microsoft.NET.Test.Sdk`, `xunit`, `xunit.runner.visualstudio`, `coverlet.collector`, `Microsoft.AspNetCore.Mvc.Testing`, `FluentAssertions`, `Moq`
      * ProjectReference: `<ProjectReference Include=\"..\\channel-app.csproj\" />`
    - `channel-app.Tests/UnitTests.cs`:
-     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using Xunit;`, `using FluentAssertions;`, and `using Moq;` at the very top. (Moq extension methods like `.ReturnsAsync(...)` and FluentAssertions like `.Should()` REQUIRE these namespaces; omitting `using Moq;` causes CS1061).
-     * xUnit unit tests verifying domain models, DTO validations, and business logic.
+     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using Xunit;`, `using FluentAssertions;`, and `using Moq;` at the very top.
+     * REAL unit tests implementing the UT cases from the Test Specification (e.g. UT-01 Email Normalization, UT-02 Unicode length, UT-03 UTC DateTime Converter, domain entity logic). ZERO DUMMY PLACEHOLDERS!
    - `channel-app.Tests/IntegrationTests.cs`:
-     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using System.Net;`, `using System.Net.Http;`, `using Xunit;`, `using FluentAssertions;`, and `using Microsoft.AspNetCore.Mvc.Testing;` at the very top.
-     * Integration tests using `WebApplicationFactory<Program>` or `TestServer` verifying API routes, status codes (200/201, 400, 404, 422), and response payloads.
+     * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using System.Net;`, `using System.Net.Http;`, `using System.Text.Json;`, `using Xunit;`, `using FluentAssertions;`, and `using Microsoft.AspNetCore.Mvc.Testing;` at the very top.
+     * Real integration tests using `WebApplicationFactory<Program>` sending authentic HTTP requests to the controller endpoints (POST /api/v1/students, GET /api/v1/students/{id}, /health) verifying status codes (201, 200, 400, 404) and JSON response payloads.
+
 5. Quality & Authenticity Standards:
    - Format and indent properly.
-   - NO placeholders, NO `// TODO`, NO fake local mock controllers.
-   - Code MUST compile cleanly (`dotnet build`) with 0 errors. Use consistent namespace `ChannelApp` (e.g. `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`, `ChannelApp.Clients`) and `ChannelApp.Tests` for tests.
+   - NO placeholders, NO `// TODO`, NO empty stub classes.
+   - Code MUST compile cleanly (`dotnet build`) with 0 errors. Use consistent namespace `ChannelApp` (e.g. `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`) and `ChannelApp.Tests` for tests.
 
-Respond ONLY with a valid JSON object containing relative paths and file contents:
+Respond ONLY with a valid JSON object containing relative paths and file contents for ALL required layers:
 {
   "files": {
     "channel-app.csproj": "<Project Sdk=\"Microsoft.NET.Sdk.Web\">...</Project>",
-    "Program.cs": "using Microsoft.EntityFrameworkCore; ...",
     "appsettings.json": "...",
     "Properties/launchSettings.json": "...",
+    "Models/Student.cs": "namespace ChannelApp.Models; public class Student { public Guid Id { get; set; } ... }",
+    "Data/AppDbContext.cs": "namespace ChannelApp.Data; public class AppDbContext : DbContext { public DbSet<Student> Students { get; set; } = null!; ... }",
+    "DTOs/StudentDtos.cs": "namespace ChannelApp.DTOs; ...",
+    "Repositories/IStudentRepository.cs": "namespace ChannelApp.Repositories; ...",
+    "Repositories/StudentRepository.cs": "namespace ChannelApp.Repositories; ...",
+    "Services/IStudentService.cs": "namespace ChannelApp.Services; ...",
+    "Services/StudentService.cs": "namespace ChannelApp.Services; ...",
+    "Controllers/StudentsController.cs": "namespace ChannelApp.Controllers; [ApiController] ...",
+    "Program.cs": "using ChannelApp.Data; using ChannelApp.Repositories; using ChannelApp.Services; ...",
     "channel-app.Tests/channel-app.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\">...</Project>",
-    "channel-app.Tests/UnitTests.cs": "using Xunit; ...",
-    "channel-app.Tests/IntegrationTests.cs": "using Xunit; ..."
+    "channel-app.Tests/UnitTests.cs": "using Xunit; ... [Fact] public void UT01_EmailNormalization() ...",
+    "channel-app.Tests/IntegrationTests.cs": "using Xunit; ... [Fact] public async Task IT01_CreateStudent_Returns201Created() ..."
   }
 }"""
 
@@ -255,6 +283,41 @@ class MainCodingAgent(BaseAgent):
     def _execute_build_verification(self, repo_path: str, target_framework: str) -> tuple[bool, str]:
         framework_lower = (target_framework or "").lower()
         if any(k in framework_lower for k in ("cs", "csharp", "dotnet", "net")):
+            repo_p = Path(repo_path)
+            csproj_files = list(repo_p.glob("*.csproj")) + list(repo_p.glob("*/*.csproj"))
+            if not csproj_files and not (repo_p / "channel-app.csproj").exists():
+                return True, "No C# project detected on disk."
+
+            # Architectural completeness validation for backend channel-app
+            missing_layers = []
+            controllers = list(repo_p.glob("Controllers/*.cs")) or list(repo_p.glob("**/Controllers/*.cs"))
+            models = list(repo_p.glob("Models/*.cs")) or list(repo_p.glob("**/Models/*.cs"))
+
+            app_db = repo_p / "Data" / "AppDbContext.cs"
+            has_dbset = False
+            if app_db.exists():
+                try:
+                    content = app_db.read_text(encoding="utf-8")
+                    if "DbSet<" in content:
+                        has_dbset = True
+                except Exception:
+                    pass
+
+            if not controllers:
+                missing_layers.append("Controllers/ (API controllers decorated with [ApiController] implementing endpoints from Section 3 of TDD)")
+            if not models:
+                missing_layers.append("Models/ (Domain entity POCOs from Section 2 of TDD)")
+            if not has_dbset:
+                missing_layers.append("Data/AppDbContext.cs (Must declare explicit public DbSet<TEntity> properties for domain entities)")
+
+            if missing_layers:
+                error_msg = (
+                    "Architectural Validation FAILED: The synthesized project is missing required Clean Architecture layers defined in docs/TECHNICAL_DESIGN.md:\n"
+                    + "\n".join(f"- Missing: {m}" for m in missing_layers)
+                    + "\n\nYou MUST implement the complete multi-file solution: Domain POCOs in Models/, DbSets in Data/AppDbContext.cs, DTOs in DTOs/, Services in Services/, Repositories in Repositories/, and API Controllers in Controllers/ as mandated by the Technical Design Document."
+                )
+                return False, error_msg
+
             try:
                 sln_file = Path(repo_path) / "channel-app.sln"
                 target = "channel-app.sln" if sln_file.exists() else "channel-app.csproj"

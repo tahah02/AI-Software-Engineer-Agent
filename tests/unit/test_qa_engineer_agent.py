@@ -62,8 +62,8 @@ class FakeQALLMAdapter(ILLMGateway):
                     }
                 ],
                 "test_files": {
-                    "channel-app.Tests/channel-app.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"/>",
-                    "channel-app.Tests/UnitTests.cs": "// Dynamic unit test implementation",
+                    "channel-app.Tests/channel-app.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net8.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include=\"Microsoft.NET.Test.Sdk\" Version=\"17.8.0\"/><PackageReference Include=\"xunit\" Version=\"2.6.2\"/><PackageReference Include=\"xunit.runner.visualstudio\" Version=\"2.5.4\"/></ItemGroup></Project>",
+                    "channel-app.Tests/UnitTests.cs": "using Xunit;\npublic class DummyTests { [Fact] public void Test1() => Assert.True(true); }",
                 },
                 "overall_summary": "All tests passed.",
             }
