@@ -1240,3 +1240,19 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - Executed end-to-end failover test simulating primary failure; verified automatic seamless routing to Groq `openai/gpt-oss-120b` returning `FALLBACK_SUCCESS` with zero downtime.
   - Live backend health check returned 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
   - Frontend portal operational on `http://localhost:8080`.
+
+### [2026-11-16] Step 37: Intra-Gemini Fallback (`gemini-3.1-flash-lite`) with Fast Failover (Completed)
+- **Problem**:
+  - Groq free tier enforces a strict 8,000 Token Per Minute (TPM) quota, causing 11k+ token requests (SRS ingest and multi-file code synthesis) to fail with `Request too large ... Limit 8000, Requested 11300`.
+- **Changes Implemented**:
+  - `config/llm_config.json`:
+    - Set primary model to `gemini-3.5-flash-lite` and fallback model to `gemini-3.1-flash-lite` across all five agents under provider `gemini`.
+    - Both models support 1,000,000 token context windows and 1,500 requests/day on separate infrastructure clusters.
+  - `src/infrastructure/llm/litellm_adapter.py`:
+    - Adjusted `transient_max_attempts`: when a fallback model is present, fails over after 3 fast attempts instead of blocking in extended retries.
+  - Wiped SQLite database cleanly via `scripts/wipe_db.py`.
+  - Restarted backend daemon on port 8081.
+- **Verification**:
+  - Verified 11,500 token prompt succeeds on both `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` with 0 errors.
+  - Verified simulated primary failure immediately fails over to `gemini-3.1-flash-lite` and returns `FALLBACK_SUCCESS` in under 2 seconds.
+  - Backend health check returned 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
