@@ -182,7 +182,9 @@ class QAEngineerAgent(BaseAgent):
                     timeout=90,
                 )
                 output = f"{res.stdout}\n{res.stderr}".strip()
-                success = (res.returncode == 0) and ("Build FAILED" not in output) and ("Failed:" not in output or "Failed: 0" in output)
+                failed_match = re.search(r"Failed:\s*(\d+)", output)
+                has_failed = bool(failed_match and int(failed_match.group(1)) > 0)
+                success = (res.returncode == 0) and ("Build FAILED" not in output) and not has_failed
 
                 trx_files = list(target_root.glob("**/test_results.trx")) or list(target_root.glob("**/*.trx"))
                 trx_results = []

@@ -145,7 +145,7 @@ class LiteLLMAdapter(ILLMGateway):
         attempts = 0
         max_attempts = max(1, request.max_retries + 1)
         has_fallback = bool(getattr(request, "fallback_model", None))
-        transient_max_attempts = max(max_attempts, 3 if has_fallback else 5)
+        transient_max_attempts = max(max_attempts, 4 if has_fallback else 6)
         last_exception: Exception | None = None
 
         while attempts < transient_max_attempts:
@@ -263,7 +263,7 @@ class LiteLLMAdapter(ILLMGateway):
                     "getaddrinfo", "socket", "dns", "ssl", "high demand", "spikes in demand"
                 )
                 if attempts < transient_max_attempts and any(k in clean_msg.lower() for k in transient_signals):
-                    backoff = 2.0 + (1.5 * attempts)
+                    backoff = 3.0 + (3.0 * attempts)
                     logger.warning(
                         f"Transient provider error on {model_name} (attempt {attempts}/{transient_max_attempts}). "
                         f"Backing off {backoff:.1f}s before retry."
