@@ -674,6 +674,7 @@ class OrchestratorService:
                         f"## Defect Remediation Directive (Attempt {remediation_count}):\n"
                         f"Agent 4 Black-Box QA identified the following test defects that must be resolved:\n\n"
                         f"{defect_lines}\n\n"
+                        f"CRITICAL REMEDIATION CONSTRAINT: You MUST modify and overwrite the EXACT existing file paths (e.g. `Services/StudentService.cs`, `Repositories/StudentRepository.cs`, `Data/AppDbContext.cs`). NEVER invent new alternate file names (e.g. `IService.cs` or `StudentServiceImplementation.cs`) as duplicate definitions in the same namespace will cause CS0101 compilation errors.\n\n"
                         f"## Original Implementation Directive:\n{s['user_requirement']}"
                     )
             save_chat_message(

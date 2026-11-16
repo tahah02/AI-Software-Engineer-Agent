@@ -87,7 +87,10 @@ Your responsibility:
    - `Data/AppDbContext.cs`:
      * EF Core DbContext inheriting from `DbContext`.
      * Explicit `public DbSet<TEntity> TEntities { get; set; } = null!;` for EVERY domain entity in Section 2 of the TDD.
-     * `OnModelCreating(ModelBuilder modelBuilder)` configuring table names, primary keys, indexes (e.g. unique email), foreign keys, and UTC DateTime value converters as specified in the TDD.
+     * `OnModelCreating(ModelBuilder modelBuilder)` configuring table names, primary keys, indexes (e.g. unique email), foreign keys.
+     * Configure UTC DateTime converter using a typed subclass to avoid CS1503:
+       `public class UtcValueConverter : ValueConverter<DateTime, DateTime> { public UtcValueConverter() : base(v => v.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v, DateTimeKind.Utc), v => DateTime.SpecifyKind(v, DateTimeKind.Utc)) { } }`
+       Inside `ConfigureConventions`: `configurationBuilder.Properties<DateTime>().HaveConversion<UtcValueConverter>();`
      * Configure SqlitePragmaInterceptor if required by the TDD.
    - `DTOs/`:
      * Dedicated request and response records/classes with data annotations / validation attributes matching Section 3 & 5 of the TDD (e.g. `DTOs/CreateStudentRequest.cs`, `DTOs/StudentResponse.cs`).
@@ -106,7 +109,7 @@ Your responsibility:
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
      * Registers dependency injection for all Repositories (`builder.Services.AddScoped<IStudentRepository, StudentRepository>();`) and Services (`builder.Services.AddScoped<IStudentService, StudentService>();`).
-     * Configures controllers (`builder.Services.AddControllers();`).
+     * Configures controllers (`builder.Services.AddControllers();`). When configuring `JsonSerializerOptions` (such as `UnmappedMemberHandling = Disallow`), ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured so that JSON camelCase payloads bind cleanly to C# PascalCase properties.
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
      * Configures typed `HttpClient` for external vendor service (if applicable per TDD).
      * Configures comprehensive global exception handling middleware that translates exceptions using authentic ASP.NET Core StatusCodes constants:
