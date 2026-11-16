@@ -1225,3 +1225,18 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - Verified `git diff` and committed changes on `Fixes-Branch`.
   - Verified Next.js hot-reloaded and top header renders cleanly without branch dropdown.
   - Verified live backend health check returns 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
+
+### [2026-11-16] Step 36: Cross-Provider Fallback to Groq (`openai/gpt-oss-120b`) for Zero-Downtime Resilience (Completed)
+- **Problem**:
+  - Google AI Studio endpoints experienced extended 503 demand spikes exceeding transient retry limits. Because `fallback_provider` and `fallback_model` were set to `null` across all agents, the orchestrator crashed with `litellm.ServiceUnavailableError`.
+- **Changes Implemented**:
+  - `config/llm_config.json`:
+    - Configured `fallback_provider: "groq"` and `fallback_model: "openai/gpt-oss-120b"` across all five engineering agents (`AGENT_1` through `AGENT_5`).
+  - `src/infrastructure/llm/litellm_adapter.py`:
+    - Enhanced failover logic to cleanly parse string or Enum `fallback_provider` and switch target provider seamlessly from Gemini to Groq if the primary model fails or times out.
+  - Wiped SQLite database cleanly via `scripts/wipe_db.py`.
+  - Restarted backend daemon on port 8081.
+- **Verification**:
+  - Executed end-to-end failover test simulating primary failure; verified automatic seamless routing to Groq `openai/gpt-oss-120b` returning `FALLBACK_SUCCESS` with zero downtime.
+  - Live backend health check returned 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
+  - Frontend portal operational on `http://localhost:8080`.
