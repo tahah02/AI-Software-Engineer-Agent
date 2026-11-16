@@ -1256,3 +1256,20 @@ elease_node to check genuine build and QA outcomes, marking workflow status as F
   - Verified 11,500 token prompt succeeds on both `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite` with 0 errors.
   - Verified simulated primary failure immediately fails over to `gemini-3.1-flash-lite` and returns `FALLBACK_SUCCESS` in under 2 seconds.
   - Backend health check returned 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
+
+### [2026-11-16] Step 38: Fix False QA Failure Bug & Strengthen Transient Exponential Backoff (Completed)
+- **Problem**:
+  - `qa_engineer.py` checked `"Failed: 0" in output` via exact substring match. In .NET 8 CLI output, `dotnet test` formats results with variable spacing (`Failed:     0`), causing `cli_success` to evaluate to `False` even when all tests passed with 0 errors.
+  - This false failure triggered recursive, unnecessary Agent 3 defect remediation cycles that exhausted Google AI Studio rate limits and caused 503 errors.
+- **Changes Implemented**:
+  - `src/application/agents/qa_engineer.py`:
+    - Replaced brittle substring check with regex matching: `failed_match = re.search(r"Failed:\s*(\d+)", output); has_failed = bool(failed_match and int(failed_match.group(1)) > 0)`.
+    - Correctly marks QA as `PASSED` when `has_failed` is False and `returncode == 0`.
+  - `src/infrastructure/llm/litellm_adapter.py`:
+    - Expanded transient retry backoff from `2.0 + 1.5 * attempts` to `3.0 + 3.0 * attempts` (up to 4 attempts before failover) to allow Google demand spikes to fully subside.
+  - Wiped SQLite database cleanly via `scripts/wipe_db.py`.
+  - Restarted backend daemon on port 8081.
+- **Verification**:
+  - Verified `dotnet test` on student registration solution passes cleanly.
+  - Live backend health check returned 200 OK (`{"status":"healthy","database":"connected","version":"0.1.0"}`).
+  - Frontend portal operational on `http://localhost:8080`.
