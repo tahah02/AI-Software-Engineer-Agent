@@ -17,6 +17,18 @@ Progress is tracked strictly through verifiable architectural milestones, not ar
 
 ---
 
+### [2026-11-17] Universal Entity Synthesis & ASP.NET Core Runtime Stabilization (Completed)
+- **Universal Entity Synthesis**: Removed all hardcoded 'Student' domain assumptions from src/application/agents/main_coder.py, doc_reviewer.py, qa_engineer.py, and orchestrator_service.py. Agents dynamically derive domain entities directly from ingested requirement specifications.
+- **Swashbuckle Collision & ProblemDetails Fix**:
+  - Registered uilder.Services.AddProblemDetails() in Program.cs required by pp.UseExceptionHandler().
+  - Configured c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First()) in Swagger options to prevent 500 errors on duplicate route templates.
+- **Route Resolution in CreatedAtAction**:
+  - Configured uilder.Services.AddControllers(options => options.SuppressAsyncSuffixInActionNames = false) to prevent route mismatch exceptions on asynchronous action names (GetByIdAsync).
+- **Live Verification**:
+  - POST /api/employees returned HTTP 201 Created with persisted record Id: 3.
+  - GET /api/employees/3 and GET /api/employees successfully retrieved records from SQLite.
+  - All 118 unit tests passed cleanly.
+
 ## 2. Phase 1 Activity & Verification Log
 
 ### [2026-10-20] Step 1.1: Python Project Scaffold & Virtual Environment (Completed)
