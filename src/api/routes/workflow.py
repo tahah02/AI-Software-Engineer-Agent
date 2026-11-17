@@ -128,7 +128,7 @@ TECHNICAL_KEYWORDS = {
     "spec",
     "srs",
     "requirements",
-    "student",
+    "entity",
     "microservice",
 }
 

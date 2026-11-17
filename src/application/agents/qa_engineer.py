@@ -141,7 +141,7 @@ class QAEngineerAgent(BaseAgent):
                 details = error_msg if error_msg else f"Test verified cleanly with zero assertions failed ({clean_dur})."
 
                 http_m = "POST" if "POST" in full_test_name.upper() else ("GET" if "GET" in full_test_name.upper() else "")
-                ep = "/api/students" if "student" in full_test_name.lower() else "/"
+                ep = "/"
 
                 results.append({
                     "test_key": test_key,

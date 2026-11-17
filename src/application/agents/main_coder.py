@@ -82,8 +82,8 @@ Your responsibility:
      * Microsoft.AspNetCore.Authentication.JwtBearer
      * System.IdentityModel.Tokens.Jwt
    - `Models/`:
-     * Generate POCO domain entities for EACH entity specified in Section 2 of the TDD (e.g. `Models/Student.cs`).
-     * Include all fields, data types, Guid primary keys, required properties, and relationships.
+     * Generate POCO domain entities for EACH entity specified in Section 2 of the TDD (e.g. `Models/<Entity>.cs`).
+     * Include all fields, data types, primary keys (Guid or int per TDD), required properties, and relationships.
    - `Data/AppDbContext.cs`:
      * EF Core DbContext inheriting from `DbContext`.
      * Explicit `public DbSet<TEntity> TEntities { get; set; } = null!;` for EVERY domain entity in Section 2 of the TDD.
@@ -93,22 +93,22 @@ Your responsibility:
        Inside `ConfigureConventions`: `configurationBuilder.Properties<DateTime>().HaveConversion<UtcValueConverter>();`
      * Configure SqlitePragmaInterceptor if required by the TDD.
    - `DTOs/`:
-     * Dedicated request and response records/classes with data annotations / validation attributes matching Section 3 & 5 of the TDD (e.g. `DTOs/CreateStudentRequest.cs`, `DTOs/StudentResponse.cs`).
+     * Dedicated request and response records/classes with data annotations / validation attributes matching Section 3 & 5 of the TDD (e.g. `DTOs/Create<Entity>Request.cs`, `DTOs/<Entity>Response.cs`).
      * Use `[Required(ErrorMessage = "... is required")]` on nullable fields so missing fields result in authentic HTTP 400 Bad Request.
    - `Repositories/`:
-     * Repository interface (e.g. `Repositories/IStudentRepository.cs`) and implementation (e.g. `Repositories/StudentRepository.cs`).
-     * Methods for persistence operations (e.g. `GetByIdAsync`, `GetByEmailAsync`, `AddAsync`, `SaveChangesAsync`) accepting `CancellationToken`.
+     * Repository interface (e.g. `Repositories/I<Entity>Repository.cs`) and implementation (e.g. `Repositories/<Entity>Repository.cs`).
+     * Methods for persistence operations (e.g. `GetByIdAsync`, `AddAsync`, `SaveChangesAsync`) accepting `CancellationToken`.
    - `Services/`:
-     * Service interface (e.g. `Services/IStudentService.cs`) and implementation (e.g. `Services/StudentService.cs`).
-     * Business logic, normalization (e.g. lowercasing email), validation, and coordination with repositories.
+     * Service interface (e.g. `Services/I<Entity>Service.cs`) and implementation (e.g. `Services/<Entity>Service.cs`).
+     * Business logic, normalization, validation, and coordination with repositories.
    - `Controllers/`:
-     * ASP.NET Core API controllers (e.g. `Controllers/StudentsController.cs`).
-     * Annotated with `[ApiController]` and route attribute matching TDD Section 3 (e.g. `[Route("api/v1/students")]`).
+     * ASP.NET Core API controllers (e.g. `Controllers/<Entity>Controller.cs`).
+     * Annotated with `[ApiController]` and route attribute matching TDD Section 3.
      * Injects the corresponding service or repository.
      * Implements all HTTP action methods (`[HttpPost]`, `[HttpGet("{id}")]`, `[HttpGet]`, etc.) returning typed `ActionResult<T>` or `IActionResult` with proper HTTP status codes (201 Created with Location header, 200 OK, 400 Bad Request ProblemDetails, 404 Not Found, 409 Conflict).
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
-     * Registers dependency injection for all Repositories (`builder.Services.AddScoped<IStudentRepository, StudentRepository>();`) and Services (`builder.Services.AddScoped<IStudentService, StudentService>();`).
+     * Registers dependency injection for all Repositories and Services defined in the project with Scoped lifetime.
      * Configures controllers (`builder.Services.AddControllers();`). When configuring `JsonSerializerOptions` (such as `UnmappedMemberHandling = Disallow`), ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured so that JSON camelCase payloads bind cleanly to C# PascalCase properties.
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
      * Configures typed `HttpClient` for external vendor service (if applicable per TDD).
@@ -143,33 +143,34 @@ Your responsibility:
    - `channel-app.Tests/UnitTests.cs`:
      * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using Xunit;`, `using FluentAssertions;`, and `using Moq;` at the very top.
      * REAL unit tests implementing the UT cases from the Test Specification (e.g. UT-01 Email Normalization, UT-02 Unicode length, UT-03 UTC DateTime Converter, domain entity logic). ZERO DUMMY PLACEHOLDERS!
+     * TIMEPROVIDER RULE: If using `TimeProvider`, NEVER call non-existent methods like `TimeProvider.FromUtcNow(...)`. To freeze/mock time, use Moq: `var mockTime = new Mock<TimeProvider>(); mockTime.Setup(t => t.GetUtcNow()).Returns(new DateTimeOffset(fixedTime));` or pass `TimeProvider.System`.
    - `channel-app.Tests/IntegrationTests.cs`:
      * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using System.Net;`, `using System.Net.Http;`, `using System.Text.Json;`, `using Xunit;`, `using FluentAssertions;`, and `using Microsoft.AspNetCore.Mvc.Testing;` at the very top.
-     * Real integration tests using `WebApplicationFactory<Program>` sending authentic HTTP requests to the controller endpoints (POST /api/v1/students, GET /api/v1/students/{id}, /health) verifying status codes (201, 200, 400, 404) and JSON response payloads.
+     * Real integration tests using `WebApplicationFactory<Program>` sending authentic HTTP requests to the controller endpoints from Section 3 of the TDD verifying status codes (201, 200, 400, 404) and JSON response payloads.
 
 5. Quality & Authenticity Standards:
    - Format and indent properly.
    - NO placeholders, NO `// TODO`, NO empty stub classes.
    - Code MUST compile cleanly (`dotnet build`) with 0 errors. Use consistent namespace `ChannelApp` (e.g. `ChannelApp.Models`, `ChannelApp.Data`, `ChannelApp.Controllers`, `ChannelApp.DTOs`, `ChannelApp.Services`, `ChannelApp.Repositories`) and `ChannelApp.Tests` for tests.
 
-Respond ONLY with a valid JSON object containing relative paths and file contents for ALL required layers:
+Respond ONLY with a valid JSON object containing relative paths and file contents for ALL required layers derived directly from the TDD:
 {
   "files": {
     "channel-app.csproj": "<Project Sdk=\"Microsoft.NET.Sdk.Web\">...</Project>",
     "appsettings.json": "...",
     "Properties/launchSettings.json": "...",
-    "Models/Student.cs": "namespace ChannelApp.Models; public class Student { public Guid Id { get; set; } ... }",
-    "Data/AppDbContext.cs": "namespace ChannelApp.Data; public class AppDbContext : DbContext { public DbSet<Student> Students { get; set; } = null!; ... }",
-    "DTOs/StudentDtos.cs": "namespace ChannelApp.DTOs; ...",
-    "Repositories/IStudentRepository.cs": "namespace ChannelApp.Repositories; ...",
-    "Repositories/StudentRepository.cs": "namespace ChannelApp.Repositories; ...",
-    "Services/IStudentService.cs": "namespace ChannelApp.Services; ...",
-    "Services/StudentService.cs": "namespace ChannelApp.Services; ...",
-    "Controllers/StudentsController.cs": "namespace ChannelApp.Controllers; [ApiController] ...",
+    "Models/<Entity>.cs": "namespace ChannelApp.Models; public class <Entity> { ... }",
+    "Data/AppDbContext.cs": "namespace ChannelApp.Data; public class AppDbContext : DbContext { public DbSet<<Entity>> <Entities> { get; set; } = null!; ... }",
+    "DTOs/<Entity>Dtos.cs": "namespace ChannelApp.DTOs; ...",
+    "Repositories/I<Entity>Repository.cs": "namespace ChannelApp.Repositories; ...",
+    "Repositories/<Entity>Repository.cs": "namespace ChannelApp.Repositories; ...",
+    "Services/I<Entity>Service.cs": "namespace ChannelApp.Services; ...",
+    "Services/<Entity>Service.cs": "namespace ChannelApp.Services; ...",
+    "Controllers/<Entity>Controller.cs": "namespace ChannelApp.Controllers; [ApiController] ...",
     "Program.cs": "using ChannelApp.Data; using ChannelApp.Repositories; using ChannelApp.Services; ...",
     "channel-app.Tests/channel-app.Tests.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\">...</Project>",
-    "channel-app.Tests/UnitTests.cs": "using Xunit; ... [Fact] public void UT01_EmailNormalization() ...",
-    "channel-app.Tests/IntegrationTests.cs": "using Xunit; ... [Fact] public async Task IT01_CreateStudent_Returns201Created() ..."
+    "channel-app.Tests/UnitTests.cs": "using Xunit; ... [Fact] public void UT01_...() ...",
+    "channel-app.Tests/IntegrationTests.cs": "using Xunit; ... [Fact] public async Task IT01_...() ..."
   }
 }"""
 

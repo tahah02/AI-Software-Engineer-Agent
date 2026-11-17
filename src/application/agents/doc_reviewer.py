@@ -143,7 +143,7 @@ YOUR HIGHEST PRIORITY DIRECTIVES:
                 f"   - DateTime Persistence: Mandate explicit UTC roundtrip 'ValueConverter<DateTime, DateTime>' for all entity DateTime properties.\n"
                 f"   - Unicode Counting: Validate string length boundaries using Unicode scalar counting (EnumerateRunes().Count()).\n"
                 f"   - RFC 9457 Problem Details: Ensure all error responses including 400, 401, 403, 404, 409, 422, 500, 502, 503, 504 emit application/problem+json.\n"
-                f"   - Permissions Claims: Support both scalar string and array permissions claims for 'student:create'.\n"
+                f"   - Permissions Claims: Support both scalar string and array permissions claims for required action permissions (e.g. 'resource:action').\n"
                 f"   - External Vendor Scope: If the system has NO external third-party vendor APIs, explicitly state: 'Mock Vendor Server: Not Applicable / Excluded (Agent 2 Bypassed)'.\n\n"
                 f"Output pure Markdown only. Do not wrap in JSON."
             )
