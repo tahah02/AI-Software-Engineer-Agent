@@ -108,3 +108,10 @@ mcp_config.local.json
 
 # AAISE Generated Agent Workspaces
 /workspace/
+
+# Archive Files & Local Backups
+*.rar
+*.zip
+*.7z
+*.tar.gz
+*.bak
