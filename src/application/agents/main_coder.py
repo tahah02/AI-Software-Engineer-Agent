@@ -109,7 +109,8 @@ Your responsibility:
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
      * Registers dependency injection for all Repositories and Services defined in the project with Scoped lifetime.
-     * Configures controllers (`builder.Services.AddControllers();`). When configuring `JsonSerializerOptions` (such as `UnmappedMemberHandling = Disallow`), ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured so that JSON camelCase payloads bind cleanly to C# PascalCase properties.
+     * Configures controllers (`builder.Services.AddControllers();`). Ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured. MANDATORY: Do NOT set `options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;` as this causes Swashbuckle to crash with HTTP 500 when generating `/swagger/v1/swagger.json`.
+     * MANDATORY: Always register `builder.Services.AddProblemDetails();` before `builder.Build()`. When using `app.UseExceptionHandler()`, `AddProblemDetails()` is required by ASP.NET Core runtime.
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
      * Configures typed `HttpClient` for external vendor service (if applicable per TDD).
      * Configures comprehensive global exception handling middleware that translates exceptions using authentic ASP.NET Core StatusCodes constants:
@@ -122,11 +123,12 @@ Your responsibility:
        - Input validation / bad request -> StatusCodes.Status400BadRequest (400 Bad Request).
        (MANDATORY: NEVER invent non-existent status names like Status400BadGateway).
      * Health Checks: `builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();` mapped to `/health`.
-     * Swagger / OpenAPI documentation configured and enabled. If configuring JWT Bearer authorization, configure security requirement using OpenApiSecurityScheme:
+     * Swagger / OpenAPI documentation configured and enabled (`builder.Services.AddEndpointsApiExplorer(); builder.Services.AddSwaggerGen(c => { c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First()); });`). If configuring JWT Bearer authorization, configure security requirement using OpenApiSecurityScheme:
        `c.AddSecurityRequirement(new OpenApiSecurityRequirement { { new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" } }, Array.Empty<string>() } });`
      * Middleware & Security:
        - If implementing custom `IAuthorizationMiddlewareResultHandler`, use boolean properties `authorizeResult.Challenged` (NEVER use `.Challenge` as it is a method group) and `authorizeResult.Forbidden`.
        - If configuring Rate Limiting in `Program.cs`, ensure `using Microsoft.AspNetCore.RateLimiting;` is included at the top of the file.
+     * MANDATORY: At the very end of Program.cs, you MUST include `public partial class Program { }` so that `WebApplicationFactory<Program>` in integration tests can access the Program class.
    - `appsettings.json`:
      {
        "ConnectionStrings": { "DefaultConnection": "Data Source=app.db" },
@@ -147,6 +149,7 @@ Your responsibility:
    - `channel-app.Tests/IntegrationTests.cs`:
      * MANDATORY USINGS: MUST explicitly include `using System;`, `using System.Threading.Tasks;`, `using System.Net;`, `using System.Net.Http;`, `using System.Text.Json;`, `using Xunit;`, `using FluentAssertions;`, and `using Microsoft.AspNetCore.Mvc.Testing;` at the very top.
      * Real integration tests using `WebApplicationFactory<Program>` sending authentic HTTP requests to the controller endpoints from Section 3 of the TDD verifying status codes (201, 200, 400, 404) and JSON response payloads.
+     * FLUENTASSERTIONS RULE: For checking non-default DateTime, use `.Should().NotBe(default(DateTime))` (NEVER use non-existent methods like `.NotBeDefault()`). For checking status codes, use `.StatusCode.Should().Be(HttpStatusCode.OK)`.
 
 5. Quality & Authenticity Standards:
    - Format and indent properly.
