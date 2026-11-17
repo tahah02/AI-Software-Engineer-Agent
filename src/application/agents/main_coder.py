@@ -109,7 +109,7 @@ Your responsibility:
    - `Program.cs`:
      * Configures SQLite `AppDbContext` (`Data Source=app.db`).
      * Registers dependency injection for all Repositories and Services defined in the project with Scoped lifetime.
-     * Configures controllers (`builder.Services.AddControllers();`). Ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured. MANDATORY: Do NOT set `options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;` as this causes Swashbuckle to crash with HTTP 500 when generating `/swagger/v1/swagger.json`.
+     * Configures controllers: `builder.Services.AddControllers(options => { options.SuppressAsyncSuffixInActionNames = false; });`. MANDATORY: You must set `options.SuppressAsyncSuffixInActionNames = false;` so that `CreatedAtAction(nameof(GetByIdAsync), ...)` can resolve the route without throwing "No route matches the supplied values". Ensure `options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;` is configured. MANDATORY: Do NOT set `options.JsonSerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;` as this causes Swashbuckle to crash with HTTP 500 when generating `/swagger/v1/swagger.json`.
      * MANDATORY: Always register `builder.Services.AddProblemDetails();` before `builder.Build()`. When using `app.UseExceptionHandler()`, `AddProblemDetails()` is required by ASP.NET Core runtime.
      * Initializes database schema cleanly via `db.Database.EnsureCreated()`.
      * Configures typed `HttpClient` for external vendor service (if applicable per TDD).
